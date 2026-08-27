@@ -4,8 +4,9 @@ import type { ProviderError } from "./errors";
 export type ProviderId = "bitbucket-cloud" | (string & {});
 
 export interface ProviderCredentials {
-  readonly email: string;
-  readonly token: string;
+  readonly provider: ProviderId;
+  /** Opaque credential material owned by the provider adapter. */
+  readonly secret: string;
 }
 
 export interface ProviderCapabilities {

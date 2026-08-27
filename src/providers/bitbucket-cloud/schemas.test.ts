@@ -21,7 +21,8 @@ describe("Bitbucket response schemas", () => {
     if (result._tag === "Left") {
       expect(result.left).toEqual({
         _tag: "DecodeError",
-        message: "Bitbucket returned an unreadable user response",
+        message: "Provider returned invalid data",
+        operation: "current user",
         endpoint: "/user",
       });
     }
@@ -37,15 +38,33 @@ describe("Bitbucket response schemas", () => {
     expect(result.values[0]?.id).toBe(7);
   });
 
-  it("maps an unknown activity enum to a safe normalized value", () => {
+  it("decodes documented approval, request-change, comment, update, and unknown events", () => {
     const result = Effect.runSync(decodeActivityPage(activityPage));
-    expect(result.values.map((signal) => signal.kind)).toEqual(["approved", "commented", "other"]);
+    expect(result.values.map((signal) => signal.kind)).toEqual([
+      "approved",
+      "changes_requested",
+      "commented",
+      "updated",
+      "other",
+    ]);
+    expect(result.values.map((signal) => signal.createdAt)).toEqual([
+      "2026-08-28T09:31:00+00:00",
+      "2026-08-28T09:32:00+00:00",
+      "2026-08-28T09:33:00+00:00",
+      "2026-08-28T09:34:00+00:00",
+      "2026-08-28T09:35:00+00:00",
+    ]);
   });
 
   it("rejects malformed timestamps with a redacted provider error", () => {
     const malformed = {
       ...activityPage,
-      values: [{ ...activityPage.values[0], created_on: "not-a-timestamp" }],
+      values: [
+        {
+          ...activityPage.values[0],
+          approval: { ...activityPage.values[0].approval, date: "2026-08-28 09:31:00" },
+        },
+      ],
     };
     const result = Effect.runSync(Effect.either(decodeActivityPage(malformed)));
 
@@ -53,10 +72,11 @@ describe("Bitbucket response schemas", () => {
     if (result._tag === "Left") {
       expect(result.left).toEqual({
         _tag: "DecodeError",
-        message: "Bitbucket returned unreadable review activity",
+        message: "Provider returned invalid data",
+        operation: "review activity",
         endpoint: "/pullrequests/{id}/activity",
       });
-      expect(JSON.stringify(result.left)).not.toContain("not-a-timestamp");
+      expect(JSON.stringify(result.left)).not.toContain("2026-08-28 09:31:00");
     }
   });
 });

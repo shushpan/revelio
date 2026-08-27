@@ -45,9 +45,11 @@ describe("Bitbucket read client", () => {
         client.getReviewSignals({ repository: { workspace: "acme", slug: "review" }, id: 7 }),
       ),
     ).resolves.toMatchObject([
-      { id: "{activity-approved}", kind: "approved" },
-      { id: "18", kind: "commented", text: "Synthetic review comment" },
-      { id: "{activity-unknown}", kind: "other" },
+      { id: "approval:2026-08-28T09:31:00+00:00:{reviewer-uuid}", kind: "approved" },
+      { kind: "changes_requested" },
+      { kind: "commented", text: "Synthetic review comment" },
+      { kind: "updated" },
+      { kind: "other" },
     ]);
 
     expect(requests).toEqual([
@@ -59,6 +61,41 @@ describe("Bitbucket read client", () => {
     expect(client.capabilities.canWriteReviews).toBe(false);
   });
 
+  it("fails repeated and over-ceiling pagination instead of looping forever", async () => {
+    const repeatedFetcher = vi.fn(
+      async () => new Response(JSON.stringify(pullRequestPage), { status: 200 }),
+    );
+    const repeatedClient = makeBitbucketClient(credentials, repeatedFetcher);
+    const repeated = await Effect.runPromise(
+      Effect.either(repeatedClient.listOpenPullRequests({ workspace: "acme", slug: "review" })),
+    );
+    expect(repeated).toMatchObject({
+      _tag: "Left",
+      left: { _tag: "PaginationError", message: "Provider pagination repeated a page marker" },
+    });
+
+    let endlessPageNumber = 0;
+    const endlessFetcher = vi.fn(async () => {
+      endlessPageNumber += 1;
+      return new Response(
+        JSON.stringify({
+          ...pullRequestPage,
+          next: `https://api.bitbucket.org/2.0/page/${endlessPageNumber + 1}`,
+        }),
+        { status: 200 },
+      );
+    });
+    const endlessClient = makeBitbucketClient(credentials, endlessFetcher);
+    const endless = await Effect.runPromise(
+      Effect.either(endlessClient.listOpenPullRequests({ workspace: "acme", slug: "review" })),
+    );
+    expect(endless).toMatchObject({
+      _tag: "Left",
+      left: { _tag: "PaginationError", message: "Provider pagination exceeded its safety limit" },
+    });
+    expect(endlessFetcher).toHaveBeenCalledTimes(100);
+  });
+
   it("maps HTTP failures to redacted provider errors", async () => {
     const fetcher = vi.fn(async () => new Response("token=must-not-leak", { status: 401 }));
     const client = makeBitbucketClient(credentials, fetcher);
@@ -68,11 +105,28 @@ describe("Bitbucket read client", () => {
       _tag: "Left",
       left: {
         _tag: "Unauthorized",
-        message: "Bitbucket rejected the credentials",
+        message: "Provider rejected the credentials",
+        operation: "current user",
         endpoint: "/user",
         status: 401,
       },
     });
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
+  });
+
+  it("names the current-user operation when a successful response is not valid JSON", async () => {
+    const fetcher = vi.fn(async () => new Response("not-json", { status: 200 }));
+    const client = makeBitbucketClient(credentials, fetcher);
+    const result = await Effect.runPromise(Effect.either(client.getCurrentUser));
+
+    expect(result).toMatchObject({
+      _tag: "Left",
+      left: {
+        _tag: "DecodeError",
+        message: "Provider returned invalid data",
+        operation: "current user",
+        endpoint: "/user",
+      },
+    });
   });
 });

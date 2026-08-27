@@ -1,12 +1,11 @@
 {
-  "pagelen": 3,
-  "size": 3,
+  "pagelen": 5,
+  "size": 5,
   "page": 1,
   "values": [
     {
-      "uuid": "{activity-approved}",
-      "created_on": "2026-08-28T09:31:00+00:00",
       "approval": {
+        "date": "2026-08-28T09:31:00+00:00",
         "user": {
           "uuid": "{reviewer-uuid}",
           "display_name": "Synthetic Reviewer",
@@ -15,10 +14,19 @@
       }
     },
     {
-      "uuid": "{activity-commented}",
-      "created_on": "2026-08-28T09:32:00+00:00",
+      "request_changes": {
+        "date": "2026-08-28T09:32:00+00:00",
+        "user": {
+          "uuid": "{reviewer-uuid}",
+          "display_name": "Synthetic Reviewer",
+          "nickname": "reviewer"
+        }
+      }
+    },
+    {
       "comment": {
         "id": 18,
+        "created_on": "2026-08-28T09:33:00+00:00",
         "content": { "raw": "Synthetic review comment" },
         "user": {
           "uuid": "{author-uuid}",
@@ -28,16 +36,19 @@
       }
     },
     {
-      "uuid": "{activity-unknown}",
-      "created_on": "2026-08-28T09:33:00+00:00",
       "update": {
-        "state": "NEW_PROVIDER_STATE",
+        "date": "2026-08-28T09:34:00+00:00",
+        "state": "OPEN",
         "author": {
           "uuid": "{author-uuid}",
           "display_name": "Synthetic Author",
           "nickname": "author"
         }
       }
+    },
+    {
+      "type": "future_event",
+      "date": "2026-08-28T09:35:00+00:00"
     }
   ]
 }

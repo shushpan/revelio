@@ -3,23 +3,29 @@ import type {
   CodeReviewProvider,
   PullRequestRef,
   PullRequestSummary,
-  ProviderCredentials,
   ProviderUser,
   RepositoryRef,
   ReviewSignal,
 } from "../contracts";
 import type { ProviderError } from "../errors";
 import { decodeError } from "../errors";
+import type { BitbucketCredentials } from "./auth";
 import { buildBitbucketRequest } from "./request";
 import { decodeActivityPage, decodePullRequestPage, decodeUser, mapPullRequest } from "./schemas";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
 
-const httpError = (status: number, endpoint: string, retryAfter: string | null): ProviderError => {
+const httpError = (
+  status: number,
+  operation: string,
+  endpoint: string,
+  retryAfter: string | null,
+): ProviderError => {
   if (status === 401) {
     return {
       _tag: "Unauthorized",
-      message: "Bitbucket rejected the credentials",
+      message: "Provider rejected the credentials",
+      operation,
       endpoint,
       status,
     };
@@ -27,7 +33,8 @@ const httpError = (status: number, endpoint: string, retryAfter: string | null):
   if (status === 403) {
     return {
       _tag: "Forbidden",
-      message: "Bitbucket denied the requested permission",
+      message: "Provider denied the requested permission",
+      operation,
       endpoint,
       status,
     };
@@ -36,7 +43,8 @@ const httpError = (status: number, endpoint: string, retryAfter: string | null):
     const parsed = retryAfter === null ? undefined : Number.parseInt(retryAfter, 10);
     return {
       _tag: "RateLimited",
-      message: "Bitbucket rate limit was reached",
+      message: "Provider rate limit was reached",
+      operation,
       endpoint,
       status,
       ...(parsed !== undefined && Number.isFinite(parsed) ? { retryAfterSeconds: parsed } : {}),
@@ -44,7 +52,8 @@ const httpError = (status: number, endpoint: string, retryAfter: string | null):
   }
   return {
     _tag: "ServerError",
-    message: "Bitbucket returned a server error",
+    message: "Provider returned a server error",
+    operation,
     endpoint,
     status,
   };
@@ -52,7 +61,8 @@ const httpError = (status: number, endpoint: string, retryAfter: string | null):
 
 const requestJson = (
   path: string,
-  credentials: ProviderCredentials,
+  operation: string,
+  credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation,
 ): Effect.Effect<unknown, ProviderError> =>
   Effect.gen(function* () {
@@ -61,36 +71,56 @@ const requestJson = (
       catch: () =>
         ({
           _tag: "NetworkError",
-          message: "Bitbucket could not be reached",
+          message: "Provider could not be reached",
+          operation,
           endpoint: path,
         }) as const,
     });
 
     if (!response.ok) {
       return yield* Effect.fail(
-        httpError(response.status, path, response.headers.get("Retry-After")),
+        httpError(response.status, operation, path, response.headers.get("Retry-After")),
       );
     }
 
     return yield* Effect.tryPromise({
       try: () => response.json() as Promise<unknown>,
-      catch: () => decodeError("Bitbucket returned an unreadable pull-request response", path),
+      catch: () => decodeError(operation, path),
     });
   });
 
 const collectPages = <A>(
+  operation: string,
   fetchPage: (
     page: number,
   ) => Effect.Effect<{ readonly values: ReadonlyArray<A>; readonly next?: string }, ProviderError>,
 ): Effect.Effect<ReadonlyArray<A>, ProviderError> =>
   Effect.gen(function* () {
     const values: A[] = [];
+    const seenMarkers = new Set<string>();
     let page = 1;
     let hasNext = true;
     while (hasNext) {
+      if (page > 100) {
+        return yield* Effect.fail({
+          _tag: "PaginationError",
+          message: "Provider pagination exceeded its safety limit",
+          operation,
+        } as const);
+      }
       const current = yield* fetchPage(page);
       values.push(...current.values);
       hasNext = current.next !== undefined;
+      if (current.next !== undefined) {
+        if (seenMarkers.has(current.next)) {
+          return yield* Effect.fail({
+            _tag: "PaginationError",
+            message: "Provider pagination repeated a page marker",
+            operation,
+          } as const);
+        }
+        seenMarkers.add(current.next);
+      }
       page += 1;
     }
     return values;
@@ -100,11 +130,12 @@ const repositoryPath = (repository: RepositoryRef): string =>
   `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.slug)}`;
 
 export const makeBitbucketClient = (
-  credentials: ProviderCredentials,
+  credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation = (request) => fetch(request),
 ): CodeReviewProvider => {
   const getCurrentUser: Effect.Effect<ProviderUser, ProviderError> = requestJson(
     "/user",
+    "current user",
     credentials,
     fetchImplementation,
   ).pipe(Effect.flatMap(decodeUser));
@@ -112,9 +143,9 @@ export const makeBitbucketClient = (
   const listOpenPullRequests = (
     repository: RepositoryRef,
   ): Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError> =>
-    collectPages((page) => {
+    collectPages("open pull requests", (page) => {
       const path = `${repositoryPath(repository)}/pullrequests?state=OPEN&page=${page}`;
-      return requestJson(path, credentials, fetchImplementation).pipe(
+      return requestJson(path, "open pull requests", credentials, fetchImplementation).pipe(
         Effect.flatMap(decodePullRequestPage),
       );
     }).pipe(Effect.map((values) => values.map((value) => mapPullRequest(value, repository))));
@@ -122,9 +153,9 @@ export const makeBitbucketClient = (
   const getReviewSignals = (
     pullRequest: PullRequestRef,
   ): Effect.Effect<ReadonlyArray<ReviewSignal>, ProviderError> =>
-    collectPages((page) => {
+    collectPages("review activity", (page) => {
       const path = `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity?page=${page}`;
-      return requestJson(path, credentials, fetchImplementation).pipe(
+      return requestJson(path, "review activity", credentials, fetchImplementation).pipe(
         Effect.flatMap(decodeActivityPage),
       );
     });

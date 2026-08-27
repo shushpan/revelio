@@ -1,44 +1,56 @@
 export type ProviderError =
   | {
       readonly _tag: "Unauthorized";
-      readonly message: "Bitbucket rejected the credentials";
+      readonly message: "Provider rejected the credentials";
+      readonly operation: string;
       readonly endpoint?: string;
       readonly status: 401;
     }
   | {
       readonly _tag: "Forbidden";
-      readonly message: "Bitbucket denied the requested permission";
+      readonly message: "Provider denied the requested permission";
+      readonly operation: string;
       readonly endpoint?: string;
       readonly status: 403;
     }
   | {
       readonly _tag: "RateLimited";
-      readonly message: "Bitbucket rate limit was reached";
+      readonly message: "Provider rate limit was reached";
+      readonly operation: string;
       readonly endpoint?: string;
       readonly status: 429;
       readonly retryAfterSeconds?: number;
     }
   | {
       readonly _tag: "NetworkError";
-      readonly message: "Bitbucket could not be reached";
+      readonly message: "Provider could not be reached";
+      readonly operation: string;
       readonly endpoint?: string;
     }
   | {
       readonly _tag: "DecodeError";
-      readonly message:
-        | "Bitbucket returned an unreadable user response"
-        | "Bitbucket returned an unreadable pull-request response"
-        | "Bitbucket returned unreadable review activity";
+      readonly message: "Provider returned invalid data";
+      readonly operation: string;
       readonly endpoint?: string;
     }
   | {
       readonly _tag: "ServerError";
-      readonly message: "Bitbucket returned a server error";
+      readonly message: "Provider returned a server error";
+      readonly operation: string;
       readonly endpoint?: string;
       readonly status: number;
+    }
+  | {
+      readonly _tag: "PaginationError";
+      readonly message:
+        | "Provider pagination repeated a page marker"
+        | "Provider pagination exceeded its safety limit";
+      readonly operation: string;
     };
 
-export const decodeError = (
-  message: Extract<ProviderError, { readonly _tag: "DecodeError" }>["message"],
-  endpoint: string,
-): ProviderError => ({ _tag: "DecodeError", message, endpoint });
+export const decodeError = (operation: string, endpoint: string): ProviderError => ({
+  _tag: "DecodeError",
+  message: "Provider returned invalid data",
+  operation,
+  endpoint,
+});

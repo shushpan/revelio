@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 import type {
-  PullRequestSummary,
   PullRequestState,
+  PullRequestSummary,
   ProviderUser,
   RepositoryRef,
   ReviewSignal,
@@ -10,9 +10,12 @@ import { decodeError } from "../errors";
 import type { ProviderError } from "../errors";
 
 const Timestamp = Schema.String.pipe(
-  Schema.filter((value) => !Number.isNaN(Date.parse(value)), {
-    message: () => "expected an ISO timestamp",
-  }),
+  Schema.filter(
+    (value) =>
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+      !Number.isNaN(Date.parse(value)),
+    { message: () => "expected a strict RFC 3339 timestamp" },
+  ),
 );
 
 const UserDto = Schema.Struct({
@@ -42,20 +45,35 @@ const PullRequestDto = Schema.Struct({
   reviewers: Schema.Array(UserDto),
 });
 
-const ActivityDto = Schema.Struct({
-  uuid: Schema.String,
+const ApprovalDto = Schema.Struct({ date: Timestamp, user: UserDto });
+const RequestChangesDto = Schema.Struct({ date: Timestamp, user: UserDto });
+const CommentDto = Schema.Struct({
+  id: Schema.Number,
   created_on: Timestamp,
-  approval: Schema.optional(Schema.Struct({ user: UserDto })),
-  changes_requested: Schema.optional(Schema.Struct({ user: UserDto })),
-  comment: Schema.optional(
-    Schema.Struct({
-      id: Schema.Number,
-      content: Schema.Struct({ raw: Schema.String }),
-      user: UserDto,
-    }),
-  ),
-  update: Schema.optional(Schema.Struct({ state: Schema.String, author: UserDto })),
+  content: Schema.Struct({ raw: Schema.String }),
+  user: UserDto,
 });
+const UpdateDto = Schema.Struct({ date: Timestamp, state: Schema.String, author: UserDto });
+
+const ActivityDto = Schema.Struct({
+  approval: Schema.optional(ApprovalDto),
+  request_changes: Schema.optional(RequestChangesDto),
+  changes_requested: Schema.optional(RequestChangesDto),
+  comment: Schema.optional(CommentDto),
+  update: Schema.optional(UpdateDto),
+  date: Schema.optional(Timestamp),
+}).pipe(
+  Schema.filter(
+    (activity) =>
+      activity.approval !== undefined ||
+      activity.request_changes !== undefined ||
+      activity.changes_requested !== undefined ||
+      activity.comment !== undefined ||
+      activity.update !== undefined ||
+      activity.date !== undefined,
+    { message: () => "expected a recognized activity event or dated unknown event" },
+  ),
+);
 
 type UserDto = Schema.Schema.Type<typeof UserDto>;
 type PullRequestDto = Schema.Schema.Type<typeof PullRequestDto>;
@@ -71,11 +89,7 @@ const mapUser = (user: UserDto): ProviderUser => ({
 });
 
 export const decodeUser = (input: unknown): Effect.Effect<ProviderUser, ProviderError> =>
-  decode(
-    UserDto,
-    input,
-    decodeError("Bitbucket returned an unreadable user response", "/user"),
-  ).pipe(Effect.map(mapUser));
+  decode(UserDto, input, decodeError("current user", "/user")).pipe(Effect.map(mapUser));
 
 export interface PullRequestPage {
   readonly values: ReadonlyArray<PullRequestDto>;
@@ -88,10 +102,7 @@ export const decodePullRequestPage = (
   decode(
     PageDto(PullRequestDto),
     input,
-    decodeError(
-      "Bitbucket returned an unreadable pull-request response",
-      "/repositories/{workspace}/{repo}/pullrequests",
-    ),
+    decodeError("open pull requests", "/repositories/{workspace}/{repo}/pullrequests"),
   );
 
 const mapState = (state: string): PullRequestState =>
@@ -120,21 +131,22 @@ export interface ActivityPage {
   readonly next?: string;
 }
 
-const mapActivity = (activity: ActivityDto): ReviewSignal => {
+const mapActivity = (activity: ActivityDto): ReviewSignal | undefined => {
   if (activity.approval) {
     return {
-      id: activity.uuid,
+      id: `approval:${activity.approval.date}:${activity.approval.user.uuid}`,
       kind: "approved",
       actorId: activity.approval.user.uuid,
-      createdAt: activity.created_on,
+      createdAt: activity.approval.date,
     };
   }
-  if (activity.changes_requested) {
+  const requestChanges = activity.request_changes ?? activity.changes_requested;
+  if (requestChanges) {
     return {
-      id: activity.uuid,
+      id: `changes-requested:${requestChanges.date}:${requestChanges.user.uuid}`,
       kind: "changes_requested",
-      actorId: activity.changes_requested.user.uuid,
-      createdAt: activity.created_on,
+      actorId: requestChanges.user.uuid,
+      createdAt: requestChanges.date,
     };
   }
   if (activity.comment) {
@@ -142,27 +154,40 @@ const mapActivity = (activity: ActivityDto): ReviewSignal => {
       id: String(activity.comment.id),
       kind: "commented",
       actorId: activity.comment.user.uuid,
-      createdAt: activity.created_on,
+      createdAt: activity.comment.created_on,
       text: activity.comment.content.raw,
     };
   }
   if (activity.update) {
     return {
-      id: activity.uuid,
+      id: `update:${activity.update.date}:${activity.update.author.uuid}`,
       kind:
-        activity.update.state === "OPEN" || activity.update.state === "MERGED"
+        activity.update.state === "OPEN" ||
+        activity.update.state === "MERGED" ||
+        activity.update.state === "DECLINED"
           ? "updated"
           : "other",
       actorId: activity.update.author.uuid,
-      createdAt: activity.created_on,
+      createdAt: activity.update.date,
     };
   }
-  return { id: activity.uuid, kind: "other", createdAt: activity.created_on };
+  if (activity.date) {
+    return { id: `other:${activity.date}`, kind: "other", createdAt: activity.date };
+  }
+  return undefined;
 };
 
 export const decodeActivityPage = (input: unknown): Effect.Effect<ActivityPage, ProviderError> =>
   decode(
     PageDto(ActivityDto),
     input,
-    decodeError("Bitbucket returned unreadable review activity", "/pullrequests/{id}/activity"),
-  ).pipe(Effect.map((page) => ({ ...page, values: page.values.map(mapActivity) })));
+    decodeError("review activity", "/pullrequests/{id}/activity"),
+  ).pipe(
+    Effect.map((page) => ({
+      ...page,
+      values: page.values.flatMap((activity) => {
+        const signal = mapActivity(activity);
+        return signal === undefined ? [] : [signal];
+      }),
+    })),
+  );
