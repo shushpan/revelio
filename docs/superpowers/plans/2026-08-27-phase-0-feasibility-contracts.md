@@ -44,7 +44,7 @@
 - Create: `src/styles.css`
 - Create: `e2e/smoke.spec.ts`
 - Create: `e2e/fixtures/.gitkeep`
-- Create: `.superpowers/sdd/2026-08-27-phase-0-feasibility-contracts/progress.md`
+- Create locally (ignored coordination artifact): `.superpowers/sdd/2026-08-27-phase-0-feasibility-contracts/progress.md`
 - Preserve: `docs/superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md`
 - Preserve: `docs/superpowers/plans/2026-08-27-phase-0-feasibility-contracts.md`
 
@@ -187,4 +187,3 @@ export interface CodeReviewProvider {
 - [ ] The production bundle makes no request to an origin other than the locally served app and `https://api.bitbucket.org`.
 - [ ] Any live Bitbucket behavior not safely exercised is labeled unresolved, not inferred from request shape or documentation.
 - [ ] A fresh reviewer confirms spec compliance and code quality after every task; a final reviewer checks the complete `main...implementation/phase-0` range.
-

@@ -11,9 +11,10 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "pnpm build && pnpm preview --host 127.0.0.1",
+    command:
+      "env -u FORCE_COLOR -u NO_COLOR pnpm build && env -u FORCE_COLOR -u NO_COLOR pnpm preview --host 127.0.0.1",
     url: "http://127.0.0.1:4173",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });
