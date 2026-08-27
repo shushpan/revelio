@@ -1,7 +1,14 @@
-export interface BitbucketCredentials {
+import type { ProviderCredentials } from "../contracts";
+
+export interface BitbucketCredentialPayload {
   readonly email: string;
-  readonly token: string;
+  readonly apiToken: string;
 }
+
+export type BitbucketCredentials = ProviderCredentials<
+  "bitbucket-cloud",
+  BitbucketCredentialPayload
+>;
 
 const encodeUtf8AsBase64 = (value: string): string => {
   const bytes = new TextEncoder().encode(value);
@@ -11,4 +18,4 @@ const encodeUtf8AsBase64 = (value: string): string => {
 };
 
 export const encodeBasicAuthorization = (credentials: BitbucketCredentials): string =>
-  `Basic ${encodeUtf8AsBase64(`${credentials.email}:${credentials.token}`)}`;
+  `Basic ${encodeUtf8AsBase64(`${credentials.payload.email}:${credentials.payload.apiToken}`)}`;

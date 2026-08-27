@@ -3,10 +3,10 @@ import type { ProviderError } from "./errors";
 
 export type ProviderId = "bitbucket-cloud" | (string & {});
 
-export interface ProviderCredentials {
-  readonly provider: ProviderId;
-  /** Opaque credential material owned by the provider adapter. */
-  readonly secret: string;
+export interface ProviderCredentials<Provider extends ProviderId, Payload> {
+  readonly provider: Provider;
+  /** Credential payload is defined by the concrete provider adapter. */
+  readonly payload: Payload;
 }
 
 export interface ProviderCapabilities {

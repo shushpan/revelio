@@ -5,7 +5,10 @@ import pullRequestPage from "./__fixtures__/pull-request-page.json";
 import user from "./__fixtures__/user.json";
 import { makeBitbucketClient } from "./client";
 
-const credentials = { email: "reviewer@example.test", token: "synthetic-token" };
+const credentials = {
+  provider: "bitbucket-cloud",
+  payload: { email: "reviewer@example.test", apiToken: "synthetic-token" },
+} satisfies import("./auth").BitbucketCredentials;
 
 describe("Bitbucket read client", () => {
   it("normalizes identity, all pull-request pages, and review activity without mutation methods", async () => {
