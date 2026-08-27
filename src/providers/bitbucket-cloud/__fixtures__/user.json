@@ -1,0 +1,9 @@
+{
+  "uuid": "{user-uuid}",
+  "display_name": "Synthetic Reviewer",
+  "nickname": "reviewer",
+  "account_id": "synthetic-account",
+  "links": {
+    "self": { "href": "https://api.bitbucket.org/2.0/users/{user-uuid}" }
+  }
+}

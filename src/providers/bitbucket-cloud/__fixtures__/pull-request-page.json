@@ -1,0 +1,35 @@
+{
+  "pagelen": 1,
+  "size": 2,
+  "page": 1,
+  "next": "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?page=2",
+  "values": [
+    {
+      "id": 7,
+      "title": "Improve review queue",
+      "description": "Synthetic pull request for contract tests.",
+      "state": "OPEN",
+      "updated_on": "2026-08-28T09:30:00+00:00",
+      "author": {
+        "uuid": "{author-uuid}",
+        "display_name": "Synthetic Author",
+        "nickname": "author"
+      },
+      "source": {
+        "branch": { "name": "feature/review-queue" },
+        "commit": { "hash": "abcdef1234567890" }
+      },
+      "destination": {
+        "branch": { "name": "main" },
+        "commit": { "hash": "1234567890abcdef" }
+      },
+      "reviewers": [
+        {
+          "uuid": "{reviewer-uuid}",
+          "display_name": "Synthetic Reviewer",
+          "nickname": "reviewer"
+        }
+      ]
+    }
+  ]
+}

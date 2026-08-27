@@ -1,0 +1,43 @@
+{
+  "pagelen": 3,
+  "size": 3,
+  "page": 1,
+  "values": [
+    {
+      "uuid": "{activity-approved}",
+      "created_on": "2026-08-28T09:31:00+00:00",
+      "approval": {
+        "user": {
+          "uuid": "{reviewer-uuid}",
+          "display_name": "Synthetic Reviewer",
+          "nickname": "reviewer"
+        }
+      }
+    },
+    {
+      "uuid": "{activity-commented}",
+      "created_on": "2026-08-28T09:32:00+00:00",
+      "comment": {
+        "id": 18,
+        "content": { "raw": "Synthetic review comment" },
+        "user": {
+          "uuid": "{author-uuid}",
+          "display_name": "Synthetic Author",
+          "nickname": "author"
+        }
+      }
+    },
+    {
+      "uuid": "{activity-unknown}",
+      "created_on": "2026-08-28T09:33:00+00:00",
+      "update": {
+        "state": "NEW_PROVIDER_STATE",
+        "author": {
+          "uuid": "{author-uuid}",
+          "display_name": "Synthetic Author",
+          "nickname": "author"
+        }
+      }
+    }
+  ]
+}
