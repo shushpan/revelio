@@ -11,7 +11,7 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "test:unit": "vitest run",
-    "test:e2e": "env -u FORCE_COLOR -u NO_COLOR playwright test",
+    "test:e2e": "node scripts/run-playwright.mjs test",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm build && pnpm test:e2e"
   },
   "dependencies": {

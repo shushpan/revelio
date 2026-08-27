@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { cleanVerificationEnv } from "./scripts/clean-verification-env.mjs";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -11,8 +12,8 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command:
-      "env -u FORCE_COLOR -u NO_COLOR pnpm build && env -u FORCE_COLOR -u NO_COLOR pnpm preview --host 127.0.0.1",
+    command: "pnpm build && pnpm preview --host 127.0.0.1",
+    env: cleanVerificationEnv(),
     url: "http://127.0.0.1:4173",
     reuseExistingServer: false,
   },
