@@ -1,9 +1,9 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { accountBundleAssets } from "./check-bundle-budget-lib.mjs";
 
 const distDirectory = new URL("../dist/", import.meta.url);
 const index = await readFile(new URL("index.html", distDirectory), "utf8");
-const initialAssets = [...index.matchAll(/src="([^"]+\.js)"/g)].map((match) => match[1]);
 const assetsDirectory = new URL("assets/", distDirectory);
 const assetNames = await readdir(assetsDirectory);
 const javascriptAssets = await Promise.all(
@@ -14,15 +14,7 @@ const javascriptAssets = await Promise.all(
       bytes: (await stat(join(assetsDirectory.pathname, name))).size,
     })),
 );
-const initialNames = new Set(initialAssets.map((asset) => asset.split("/").at(-1)));
-const initialBytes = javascriptAssets
-  .filter(({ name }) => initialNames.has(name))
-  .reduce((total, asset) => total + asset.bytes, 0);
-const lazyAssets = javascriptAssets.filter(({ name }) => !initialNames.has(name));
-const largestLazy = lazyAssets.reduce(
-  (largest, asset) => (asset.bytes > largest.bytes ? asset : largest),
-  { name: "(none)", bytes: 0 },
-);
+const { initialBytes, largestLazy } = accountBundleAssets(index, javascriptAssets);
 
 const initialBudget = 350_000;
 const largestLazyBudget = 820_000;

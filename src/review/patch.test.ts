@@ -147,4 +147,47 @@ describe("preprocessPatch", () => {
       { path: "src/deleted.ts", firstChangedLine: 2, firstChangedSide: "deletions" },
     ]);
   });
+
+  it("uses hunk-relative offsets for first changed coordinates across multiple hunks", () => {
+    const patch = [
+      "diff --git a/src/multi.ts b/src/multi.ts",
+      "--- a/src/multi.ts",
+      "+++ b/src/multi.ts",
+      "@@ -1,2 +1,2 @@",
+      " keep one",
+      " keep two",
+      "@@ -20,2 +30,3 @@",
+      " keep twenty",
+      "-remove twenty-one",
+      "+add thirty-one",
+      "+add thirty-two",
+      "",
+    ].join("\n");
+
+    expect(preprocessPatch(patch).files[0]).toMatchObject({
+      firstChangedLine: 31,
+      firstChangedSide: "additions",
+    });
+  });
+
+  it("uses hunk-relative deletion offsets when a later hunk is deletion-only", () => {
+    const patch = [
+      "diff --git a/src/multi-delete.ts b/src/multi-delete.ts",
+      "--- a/src/multi-delete.ts",
+      "+++ b/src/multi-delete.ts",
+      "@@ -1,2 +1,2 @@",
+      " keep one",
+      " keep two",
+      "@@ -20,3 +30,1 @@",
+      " keep twenty",
+      "-remove twenty-one",
+      "-remove twenty-two",
+      "",
+    ].join("\n");
+
+    expect(preprocessPatch(patch).files[0]).toMatchObject({
+      firstChangedLine: 21,
+      firstChangedSide: "deletions",
+    });
+  });
 });

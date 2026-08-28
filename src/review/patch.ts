@@ -52,12 +52,12 @@ export function preprocessPatch(patch: string): PreparedPatch {
           .map((content) => {
             if (content.additions > 0) {
               return {
-                line: hunk.additionStart + content.additionLineIndex,
+                line: hunk.additionStart + (content.additionLineIndex - hunk.additionLineIndex),
                 side: "additions" as const,
               };
             }
             return {
-              line: hunk.deletionStart + content.deletionLineIndex,
+              line: hunk.deletionStart + (content.deletionLineIndex - hunk.deletionLineIndex),
               side: "deletions" as const,
             };
           }),

@@ -54,6 +54,9 @@ are 317,607 and 790,000 bytes respectively; the latter is the known bundled
 Shiki `emacs-lisp` language payload emitted by the renderer. Vite's warning
 limit is set to 820 kB to match that explicit enforced lazy-chunk budget, and
 `scripts/check-bundle-budget.mjs` fails the build when either budget grows.
+The checker fails closed unless `index.html` contains exactly one external
+module entry script, includes all JavaScript `modulepreload` references in the
+initial total, and every referenced asset exists in `dist/assets`.
 
 ## `@pierre/diffs/worker` ruling
 
