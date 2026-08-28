@@ -180,6 +180,77 @@ describe("Bitbucket read client", () => {
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
   });
 
+  it.each(["http", "network", "decode"] as const)(
+    "redacts concrete details from second-page %s failures",
+    async (failure) => {
+      const opaqueNext =
+        "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?cursor=opaque-secret";
+      let requestCount = 0;
+      const fetcher = vi.fn(async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response(
+            JSON.stringify({ ...pullRequestPage, values: [], next: opaqueNext }),
+            {
+              status: 200,
+            },
+          );
+        }
+        if (failure === "http") return new Response("sensitive response", { status: 500 });
+        if (failure === "network") throw new Error("sensitive network details");
+        return new Response("not-json", { status: 200 });
+      });
+      const client = makeBitbucketClient(credentials, fetcher);
+      const result = await Effect.runPromise(
+        Effect.either(client.listOpenPullRequests({ workspace: "acme", slug: "review" })),
+      );
+
+      expect(result._tag).toBe("Left");
+      expect(JSON.stringify(result)).not.toContain("opaque-secret");
+      expect(JSON.stringify(result)).not.toContain("acme");
+      expect(JSON.stringify(result)).not.toContain("review");
+      expect(result).toMatchObject({
+        _tag: "Left",
+        left: {
+          endpoint: "/repositories/{workspace}/{repository}/pullrequests",
+        },
+      });
+    },
+  );
+
+  it("redacts the pull-request id from second-page activity failures", async () => {
+    const opaqueNext =
+      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/42/activity?cursor=opaque-secret";
+    let requestCount = 0;
+    const fetcher = vi.fn(async () => {
+      requestCount += 1;
+      if (requestCount === 1) {
+        return new Response(JSON.stringify({ ...activityPage, values: [], next: opaqueNext }), {
+          status: 200,
+        });
+      }
+      return new Response("sensitive response", { status: 500 });
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+    const result = await Effect.runPromise(
+      Effect.either(
+        client.getReviewSignals({ repository: { workspace: "acme", slug: "review" }, id: 42 }),
+      ),
+    );
+
+    expect(result).toMatchObject({
+      _tag: "Left",
+      left: {
+        _tag: "ServerError",
+        endpoint: "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/activity",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("opaque-secret");
+    expect(JSON.stringify(result)).not.toContain("acme");
+    expect(JSON.stringify(result)).not.toContain("/review/");
+    expect(JSON.stringify(result)).not.toContain("42");
+  });
+
   it("names the current-user operation when a successful response is not valid JSON", async () => {
     const fetcher = vi.fn(async () => new Response("not-json", { status: 200 }));
     const client = makeBitbucketClient(credentials, fetcher);

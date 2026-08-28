@@ -43,7 +43,7 @@ the task plan's completion criteria.
 | P0-04 | Read adapter validates identity, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts` (synthetic fixtures) | Observe a disposable repository only after live CORS/scopes pass | Proven locally; live schema compatibility remains a gate |
 | P0-05 | Pagination follows opaque returned links within the adapter's bounded safe behavior | `src/providers/bitbucket-cloud/client.test.ts` separately covers opaque query/cursor preservation, exact endpoint/origin validation, repeated links, and the 100-page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
 | P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases | Run the local form with a disposable credential and inspect only capability statuses | Proven locally; real required scopes unresolved |
-| P0-07 | Auth, permission, network/CORS, rate-limit, and decode diagnostics are distinct and redacted; client pagination failures are redacted | `src/providers/bitbucket-cloud/diagnostics.test.ts` covers 401/403/429/network/decode and redaction; `src/providers/bitbucket-cloud/client.test.ts` covers client pagination errors and redaction; component/E2E invalid-token, missing-scope, and cancellation flows cover UI handling. Diagnostics HTTP 500 and diagnostics-pagination are not exercised or claimed here. | Confirm only status class/capability result is retained in any live note | Proven locally for exercised classes; live CORS classification unresolved |
+| P0-07 | Auth, permission, network/CORS, rate-limit, and decode diagnostics are distinct and redacted; client pagination failures are redacted | `src/providers/bitbucket-cloud/diagnostics.test.ts` covers 401/403/429/network/decode and redaction; `src/providers/bitbucket-cloud/client.test.ts` covers client pagination errors, second-page endpoint redaction, and redaction; component/E2E invalid-token, missing-scope, and cancellation flows cover UI handling. Diagnostics HTTP 500 and diagnostics-pagination are not exercised or claimed here. | Confirm only status class/capability result is retained in any live note | Proven locally for exercised classes; live CORS classification unresolved |
 | P0-08 | Credentials clear on Lock/reload and no Phase 0 persistence exists | `ConnectionDiagnostics.test.tsx`; E2E Lock/reload flow; source inspection finds no storage integration | Repeat with a disposable credential, then close/reload the tab | Proven locally |
 | P0-09 | Read probes are sequential, cancellable, and limited to expected endpoint templates | Diagnostics tests assert order, abort behavior, and endpoint templates; E2E rejects unexpected paths | Observe the browser Network panel only long enough to record an allowlisted status class | Proven locally |
 | P0-10 | Mutation boundaries are known without executing remote writes | Diagnostics tests cover inert POST shapes for approve, Request changes, general comment, and inline comment | Do not send a mutation from this build; use the gated procedure only when a controlled probe exists | Proven locally as shape only; all remote mutations unresolved |
@@ -103,7 +103,7 @@ Result: exit code 0 on 2026-08-28.
 - Biome format: 51 files checked, clean.
 - Biome lint: 52 files checked, clean.
 - TypeScript project build: passed.
-- Vitest: 12 files, 56 tests passed.
+- Vitest: 12 files, 60 tests passed.
 - Production Vite build and explicit bundle budget: passed (317,678 initial
   bytes / 350,000; 790,000 largest lazy chunk / 820,000).
 - Playwright against the production preview: 7 Chromium tests passed, 0
@@ -185,6 +185,21 @@ manual release check.
 The diagnostics evidence was narrowed to the cases actually tested. It does
 not claim that diagnostics tests exercise HTTP 500 or pagination failures;
 those are not part of the local diagnostics test evidence.
+
+## Endpoint redaction fix evidence
+
+`requestJson` now receives a separate redacted endpoint template. The actual
+validated opaque URL is still used for the request, while NetworkError,
+HTTP-error, and response-DecodeError values use only the template. Second-page
+tests cover HTTP 500, network, and decode failures for pull requests, plus an
+activity failure containing a pull-request id; serialized errors omit the
+opaque cursor, workspace, repository slug, and id.
+
+RED: before this fix, each second-page failure serialized the full opaque URL
+including its cursor and concrete repository identifiers.
+
+GREEN: the focused client suite and final verification pass with 12 Vitest
+files/60 tests; no real credentials, live calls, or mutations were used.
 
 The final range after this fix is 63 changed paths from baseline `f8eafcd`:
 the one new shared fixture plus the existing Task 5 documentation and test

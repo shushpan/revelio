@@ -62,6 +62,7 @@ const httpError = (
 const requestJson = (
   path: string,
   operation: string,
+  endpoint: string,
   credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation,
 ): Effect.Effect<unknown, ProviderError> =>
@@ -78,19 +79,19 @@ const requestJson = (
           _tag: "NetworkError",
           message: "Provider could not be reached",
           operation,
-          endpoint: path,
+          endpoint,
         }) as const,
     });
 
     if (!response.ok) {
       return yield* Effect.fail(
-        httpError(response.status, operation, path, response.headers.get("Retry-After")),
+        httpError(response.status, operation, endpoint, response.headers.get("Retry-After")),
       );
     }
 
     return yield* Effect.tryPromise({
       try: () => response.json() as Promise<unknown>,
-      catch: () => decodeError(operation, path),
+      catch: () => decodeError(operation, endpoint),
     });
   });
 
@@ -174,6 +175,7 @@ export const makeBitbucketClient = (
   const getCurrentUser: Effect.Effect<ProviderUser, ProviderError> = requestJson(
     "/user",
     "current user",
+    "/user",
     credentials,
     fetchImplementation,
   ).pipe(Effect.flatMap(decodeUser));
@@ -186,9 +188,13 @@ export const makeBitbucketClient = (
       `${repositoryPath(repository)}/pullrequests?state=OPEN&page=1`,
       `${repositoryPath(repository)}/pullrequests`,
       (path) => {
-        return requestJson(path, "open pull requests", credentials, fetchImplementation).pipe(
-          Effect.flatMap(decodePullRequestPage),
-        );
+        return requestJson(
+          path,
+          "open pull requests",
+          "/repositories/{workspace}/{repository}/pullrequests",
+          credentials,
+          fetchImplementation,
+        ).pipe(Effect.flatMap(decodePullRequestPage));
       },
     ).pipe(Effect.map((values) => values.map((value) => mapPullRequest(value, repository))));
 
@@ -200,9 +206,13 @@ export const makeBitbucketClient = (
       `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity?page=1`,
       `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity`,
       (path) => {
-        return requestJson(path, "review activity", credentials, fetchImplementation).pipe(
-          Effect.flatMap(decodeActivityPage),
-        );
+        return requestJson(
+          path,
+          "review activity",
+          "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/activity",
+          credentials,
+          fetchImplementation,
+        ).pipe(Effect.flatMap(decodeActivityPage));
       },
     );
 
