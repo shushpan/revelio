@@ -11,11 +11,20 @@ export const diagnosticCapabilities = [
 
 export type DiagnosticCapability = (typeof diagnosticCapabilities)[number];
 export type DiagnosticRunState = "idle" | "running" | "succeeded" | "failed";
+export type DiagnosticErrorTag =
+  | "Unauthorized"
+  | "Forbidden"
+  | "NetworkError"
+  | "RateLimited"
+  | "DecodeError"
+  | "ServerError"
+  | "PaginationError"
+  | "Unavailable";
 
 export interface DiagnosticCapabilityResult {
   readonly capability: DiagnosticCapability;
-  readonly status: "succeeded" | "failed";
-  readonly errorTag?: string;
+  readonly status: "succeeded" | "failed" | "unavailable";
+  readonly errorTag?: DiagnosticErrorTag;
 }
 
 export interface DiagnosticsReport {

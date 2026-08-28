@@ -3,6 +3,7 @@ import { useRef, useState, type FormEvent, type JSX } from "react";
 import {
   diagnosticCapabilities,
   type DiagnosticCapability,
+  type DiagnosticErrorTag,
   type DiagnosticsReport,
   type DiagnosticsState,
 } from "./model";
@@ -52,17 +53,17 @@ export function ConnectionDiagnostics(): JSX.Element {
     };
     setDiagnostics({ state: "running" });
 
-    void Effect.runPromiseExit(
-      runBitbucketDiagnostics(credentials, { signal: controller.signal }),
-    ).then((exit) => {
-      if (requestId !== runId.current) return;
-      activeController.current = null;
-      if (exit._tag === "Success") {
-        setDiagnostics({ state: "succeeded", report: exit.value });
-      } else {
-        setDiagnostics({ state: "failed", report: failedReport(exit.cause) });
-      }
-    });
+    void Effect.runPromise(runBitbucketDiagnostics(credentials, { signal: controller.signal }))
+      .then((report) => {
+        if (requestId !== runId.current) return;
+        activeController.current = null;
+        setDiagnostics({ state: report.state, report });
+      })
+      .catch(() => {
+        if (requestId !== runId.current) return;
+        activeController.current = null;
+        setDiagnostics({ state: "failed", report: unexpectedFailureReport() });
+      });
   };
 
   return (
@@ -120,23 +121,27 @@ export function ConnectionDiagnostics(): JSX.Element {
   );
 }
 
-const failedReport = (cause: unknown): DiagnosticsReport => {
-  const errorTag = causeTag(cause);
+const unexpectedFailureReport = (): DiagnosticsReport => {
   return {
     state: "failed",
     capabilities: Object.fromEntries(
       diagnosticCapabilities.map((capability) => [
         capability,
-        { capability, status: "failed", ...(errorTag ? { errorTag } : {}) },
+        { capability, status: "failed", errorTag: "ServerError" },
       ]),
     ) as DiagnosticsReport["capabilities"],
   };
 };
 
-const causeTag = (cause: unknown): string | undefined => {
-  if (typeof cause !== "object" || cause === null || !("_tag" in cause)) return undefined;
-  const tag = (cause as { readonly _tag?: unknown })._tag;
-  return typeof tag === "string" && tag !== "Failure" ? tag : undefined;
+const errorLabels: Record<DiagnosticErrorTag, string> = {
+  Unauthorized: "Unauthorized",
+  Forbidden: "Forbidden",
+  NetworkError: "Network or CORS error",
+  RateLimited: "Rate limited",
+  DecodeError: "Invalid provider response",
+  ServerError: "Provider server error",
+  PaginationError: "Pagination error",
+  Unavailable: "Unavailable",
 };
 
 function DiagnosticsSummary({
@@ -168,7 +173,10 @@ function DiagnosticsSummary({
           return (
             <li key={capability}>
               <span>{capabilityLabels[capability]}</span>
-              <span className={`result-${result.status}`}>{result.status}</span>
+              <span className={`result-${result.status}`}>
+                {result.status}
+                {result.errorTag ? ` — ${errorLabels[result.errorTag]}` : ""}
+              </span>
             </li>
           );
         })}

@@ -90,11 +90,13 @@ describe("Bitbucket diagnostics workflow", () => {
       throw new DOMException("Aborted", "AbortError");
     });
 
-    const result = await Effect.runPromiseExit(
+    const result = await Effect.runPromise(
       runBitbucketDiagnostics(credentials, { fetch: fetcher, signal: controller.signal }),
     );
-    expect(result._tag).toBe("Failure");
-    if (result._tag === "Failure") expect(String(result.cause)).toContain("NetworkError");
+    expect(result.capabilities.identity).toMatchObject({
+      status: "failed",
+      errorTag: "NetworkError",
+    });
     expect(requestCount).toBe(1);
   });
 
@@ -104,32 +106,83 @@ describe("Bitbucket diagnostics workflow", () => {
     [429, "RateLimited"],
   ] as const)("maps HTTP %i to the distinct %s error", async (status, errorTag) => {
     const fetcher = vi.fn(async () => response({ secret: "body" }, status));
-    const result = await Effect.runPromiseExit(
+    const result = await Effect.runPromise(
       runBitbucketDiagnostics(credentials, { fetch: fetcher }),
     );
 
-    expect(result._tag).toBe("Failure");
     expect(JSON.stringify(result)).not.toContain("secret");
     expect(JSON.stringify(result)).not.toContain("synthetic-token");
-    if (result._tag === "Failure") expect(String(result.cause)).toContain(errorTag);
+    expect(result.capabilities.identity.errorTag).toBe(errorTag);
   });
 
   it("maps network/CORS and invalid JSON separately", async () => {
-    const network = await Effect.runPromiseExit(
+    const network = await Effect.runPromise(
       runBitbucketDiagnostics(credentials, {
         fetch: vi.fn(async () => Promise.reject(new Error("CORS secret"))),
       }),
     );
-    expect(network._tag).toBe("Failure");
-    if (network._tag === "Failure") expect(String(network.cause)).toContain("NetworkError");
+    expect(network.capabilities.identity.errorTag).toBe("NetworkError");
 
-    const decode = await Effect.runPromiseExit(
+    const decode = await Effect.runPromise(
       runBitbucketDiagnostics(credentials, {
         fetch: vi.fn(async () => new Response("not-json", { status: 200 })),
       }),
     );
-    expect(decode._tag).toBe("Failure");
-    if (decode._tag === "Failure") expect(String(decode.cause)).toContain("DecodeError");
+    expect(decode.capabilities.identity.errorTag).toBe("DecodeError");
+  });
+
+  it("preserves an auth failure and continues independent probes", async () => {
+    const requestedPaths: string[] = [];
+    const fetcher = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      requestedPaths.push(path);
+      if (path === "/2.0/user") return response({ secret: "invalid" }, 401);
+      return successfulFetcher(request);
+    });
+
+    const result = await Effect.runPromise(
+      runBitbucketDiagnostics(credentials, { fetch: fetcher }),
+    );
+    expect(requestedPaths.slice(0, 4)).toEqual([
+      "/2.0/user",
+      "/2.0/workspaces",
+      "/2.0/repositories",
+      "/2.0/repositories/acme/review/pullrequests",
+    ]);
+    expect(result.state).toBe("failed");
+    expect(result.capabilities.identity).toEqual({
+      capability: "identity",
+      status: "failed",
+      errorTag: "Unauthorized",
+    });
+    expect(result.capabilities["workspace-visibility"]).toMatchObject({ status: "succeeded" });
+  });
+
+  it("marks dependent probes unavailable when no repository or pull request identifier exists", async () => {
+    const fetcher = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/2.0/user") return response(diagnosticFixtures.user);
+      if (path === "/2.0/workspaces") return response({ values: [] });
+      if (path === "/2.0/repositories") return response({ values: [] });
+      throw new Error(`unexpected dependent request: ${path}`);
+    });
+
+    const result = await Effect.runPromise(
+      runBitbucketDiagnostics(credentials, { fetch: fetcher }),
+    );
+    expect(result.state).toBe("failed");
+    expect(result.capabilities["repository-visibility"]).toEqual({
+      capability: "repository-visibility",
+      status: "unavailable",
+      errorTag: "Unavailable",
+    });
+    expect(result.capabilities["open-pr-list"]).toEqual({
+      capability: "open-pr-list",
+      status: "unavailable",
+      errorTag: "Unavailable",
+    });
+    expect(result.capabilities.activity.status).toBe("unavailable");
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 });
 
