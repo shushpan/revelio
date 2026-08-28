@@ -102,65 +102,73 @@ test("runs all read-only probes with synthetic intercepted responses", async ({ 
   await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
 });
 
-test("reports an invalid-token failure without exposing response data", async ({ page }) => {
-  const observedPaths: string[] = [];
-  await page.route("https://api.bitbucket.org/**", async (route: Route) => {
-    const url = assertReadOnlyRequest(route);
-    const fullPath = `${url.pathname}${url.search}`;
-    expect([
+test.describe("invalid-token diagnostics", () => {
+  test.use({ expectedApiErrorStatuses: [401] });
+
+  test("reports an invalid-token failure without exposing response data", async ({ page }) => {
+    const observedPaths: string[] = [];
+    await page.route("https://api.bitbucket.org/**", async (route: Route) => {
+      const url = assertReadOnlyRequest(route);
+      const fullPath = `${url.pathname}${url.search}`;
+      expect([
+        "/2.0/user",
+        "/2.0/workspaces?pagelen=1",
+        "/2.0/repositories?role=member&pagelen=1",
+      ]).toContain(fullPath);
+      observedPaths.push(fullPath);
+      await route.fulfill({ status: 401, json: { secret: "synthetic response body" } });
+    });
+    await page.goto("/");
+    await fillCredentials(page);
+    await page.getByRole("button", { name: "Run diagnostics" }).click();
+    await expect(page.getByRole("heading", { name: "Diagnostics failed" })).toBeVisible();
+    await expect(
+      page.locator(".result-failed").filter({ hasText: "Unauthorized" }).first(),
+    ).toBeVisible();
+    expect(observedPaths).toEqual([
       "/2.0/user",
       "/2.0/workspaces?pagelen=1",
       "/2.0/repositories?role=member&pagelen=1",
-    ]).toContain(fullPath);
-    observedPaths.push(fullPath);
-    await route.fulfill({ status: 401, json: { secret: "synthetic response body" } });
+    ]);
+    await expect(page.locator("body")).not.toContainText("synthetic response body");
+    await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
   });
-  await page.goto("/");
-  await fillCredentials(page);
-  await page.getByRole("button", { name: "Run diagnostics" }).click();
-  await expect(page.getByRole("heading", { name: "Diagnostics failed" })).toBeVisible();
-  await expect(
-    page.locator(".result-failed").filter({ hasText: "Unauthorized" }).first(),
-  ).toBeVisible();
-  expect(observedPaths).toEqual([
-    "/2.0/user",
-    "/2.0/workspaces?pagelen=1",
-    "/2.0/repositories?role=member&pagelen=1",
-  ]);
-  await expect(page.locator("body")).not.toContainText("synthetic response body");
-  await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
 });
 
-test("reports a missing-scope failure without exposing response data", async ({ page }) => {
-  const observedPaths: string[] = [];
-  await page.route("https://api.bitbucket.org/**", async (route: Route) => {
-    const url = assertReadOnlyRequest(route);
-    const path = url.pathname;
-    observedPaths.push(`${url.pathname}${url.search}`);
-    if (path === "/2.0/user") {
-      await route.fulfill({ json: { uuid: "{user-uuid}", display_name: "Synthetic Reviewer" } });
-      return;
-    }
-    if (path === "/2.0/workspaces" || path === "/2.0/repositories") {
-      await route.fulfill({ status: 403, json: { secret: "synthetic response body" } });
-      return;
-    }
-    throw new Error(`unexpected Bitbucket probe path: ${path}`);
+test.describe("missing-scope diagnostics", () => {
+  test.use({ expectedApiErrorStatuses: [403] });
+
+  test("reports a missing-scope failure without exposing response data", async ({ page }) => {
+    const observedPaths: string[] = [];
+    await page.route("https://api.bitbucket.org/**", async (route: Route) => {
+      const url = assertReadOnlyRequest(route);
+      const path = url.pathname;
+      observedPaths.push(`${url.pathname}${url.search}`);
+      if (path === "/2.0/user") {
+        await route.fulfill({ json: { uuid: "{user-uuid}", display_name: "Synthetic Reviewer" } });
+        return;
+      }
+      if (path === "/2.0/workspaces" || path === "/2.0/repositories") {
+        await route.fulfill({ status: 403, json: { secret: "synthetic response body" } });
+        return;
+      }
+      throw new Error(`unexpected Bitbucket probe path: ${path}`);
+    });
+    await page.goto("/");
+    await fillCredentials(page);
+    await page.getByRole("button", { name: "Run diagnostics" }).click();
+    await expect(page.getByRole("heading", { name: "Diagnostics failed" })).toBeVisible();
+    await expect(
+      page.locator(".result-failed").filter({ hasText: "Forbidden" }).first(),
+    ).toBeVisible();
+    expect(observedPaths).toEqual([
+      "/2.0/user",
+      "/2.0/workspaces?pagelen=1",
+      "/2.0/repositories?role=member&pagelen=1",
+    ]);
+    await expect(page.locator("body")).not.toContainText("synthetic response body");
+    await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
   });
-  await page.goto("/");
-  await fillCredentials(page);
-  await page.getByRole("button", { name: "Run diagnostics" }).click();
-  await expect(page.getByRole("heading", { name: "Diagnostics failed" })).toBeVisible();
-  await expect(
-    page.locator(".result-failed").filter({ hasText: "Forbidden" }).first(),
-  ).toBeVisible();
-  expect(observedPaths).toEqual([
-    "/2.0/user",
-    "/2.0/workspaces?pagelen=1",
-    "/2.0/repositories?role=member&pagelen=1",
-  ]);
-  await expect(page.locator("body")).not.toContainText("synthetic response body");
-  await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
 });
 
 test("Lock cancels a pending probe and reload clears credentials", async ({ page }) => {

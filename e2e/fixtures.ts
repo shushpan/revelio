@@ -3,16 +3,18 @@ import { expect as baseExpect, test as baseTest } from "@playwright/test";
 const BITBUCKET_API_ORIGIN = "https://api.bitbucket.org";
 
 type BrowserGuards = {
+  expectedApiErrorStatuses: ReadonlyArray<number>;
   browserGuards: undefined;
 };
 
 export const test = baseTest.extend<BrowserGuards>({
+  expectedApiErrorStatuses: [[], { option: true }],
   browserGuards: [
-    async ({ page }, use, testInfo) => {
+    async ({ page, expectedApiErrorStatuses: allowedApiErrorStatuses }, use, testInfo) => {
       const localOrigin = new URL(testInfo.project.use.baseURL ?? "http://127.0.0.1:4173").origin;
       const consoleErrors: string[] = [];
       const unexpectedOrigins: string[] = [];
-      const expectedApiErrorStatuses = new Map<number, number>();
+      const expectedApiErrorStatusCounts = new Map<number, number>();
 
       const onConsole = (message: { type(): string; text(): string }): void => {
         if (message.type() !== "error") return;
@@ -20,8 +22,11 @@ export const test = baseTest.extend<BrowserGuards>({
           .text()
           .match(/^Failed to load resource: the server responded with a status of (\d+)/);
         const status = statusMatch === null ? undefined : Number(statusMatch[1]);
-        if (status !== undefined && (expectedApiErrorStatuses.get(status) ?? 0) > 0) {
-          expectedApiErrorStatuses.set(status, (expectedApiErrorStatuses.get(status) ?? 1) - 1);
+        if (status !== undefined && (expectedApiErrorStatusCounts.get(status) ?? 0) > 0) {
+          expectedApiErrorStatusCounts.set(
+            status,
+            (expectedApiErrorStatusCounts.get(status) ?? 1) - 1,
+          );
           return;
         }
         consoleErrors.push(message.text());
@@ -33,9 +38,17 @@ export const test = baseTest.extend<BrowserGuards>({
         }
       };
       const onResponse = (response: { url(): string; ok(): boolean; status(): number }): void => {
-        if (new URL(response.url()).origin !== BITBUCKET_API_ORIGIN || response.ok()) return;
+        if (
+          new URL(response.url()).origin !== BITBUCKET_API_ORIGIN ||
+          response.ok() ||
+          !allowedApiErrorStatuses.includes(response.status())
+        )
+          return;
         const status = response.status();
-        expectedApiErrorStatuses.set(status, (expectedApiErrorStatuses.get(status) ?? 0) + 1);
+        expectedApiErrorStatusCounts.set(
+          status,
+          (expectedApiErrorStatusCounts.get(status) ?? 0) + 1,
+        );
       };
 
       page.on("console", onConsole);

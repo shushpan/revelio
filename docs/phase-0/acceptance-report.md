@@ -58,7 +58,7 @@ the task plan's completion criteria.
 | P0-19 | `@pierre/diffs` public API can render a multi-file patch with stable local annotation intent | `DiffReview.test.tsx`, `e2e/diff-review.spec.ts`, ADR 0001; exact pinned version `1.3.6` | Open the production demo at a narrow and wide viewport and check readable diff layout | Proven locally |
 | P0-20 | Large patch preprocessing has a safe worker boundary with cancellation/fallback | `src/workers/patch-worker-client.test.ts`; real-worker E2E; worker source inspection | Optional browser performance observation with synthetic large fixture | Proven locally |
 | P0-21 | Experimental `@pierre/diffs/worker` is not adopted without compatibility evidence | ADR 0001 records public exports and the Phase 0 local-worker decision | Revisit only in the later CSP/annotation/performance gate | Proven locally as a documented decision |
-| P0-22 | Production verification builds and serves the production bundle, with no browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; Playwright production server; 7/7 Chromium flows passed, 0 console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
+| P0-22 | Production verification builds and serves the production bundle, with no browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and only the missing-scope test opts into 403; Playwright production server; 7/7 Chromium flows passed, 0 console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
 | P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,607-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
 | P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
@@ -100,8 +100,8 @@ pnpm verify
 
 Result: exit code 0 on 2026-08-28.
 
-- Biome format: 50 files checked, clean.
-- Biome lint: 51 files checked, clean.
+- Biome format: 51 files checked, clean.
+- Biome lint: 52 files checked, clean.
 - TypeScript project build: passed.
 - Vitest: 12 files, 52 tests passed.
 - Production Vite build and explicit bundle budget: passed (317,607 initial
@@ -148,9 +148,10 @@ now limited to the targeted heuristic and explicitly leaves arbitrary or
 disguised values to manual review. The browser guard was also widened from the
 two tests that had local console listeners to the entire suite.
 
-RED: before the fixture's expected-status handling was added, the focused
-production suite failed the intentional synthetic 401 and 403 diagnostics
-tests because Chromium emitted matching “Failed to load resource” messages.
+RED: before explicit per-test status opt-ins were added, the focused production
+suite failed the intentional synthetic 401 and 403 diagnostics tests because
+Chromium emitted matching “Failed to load resource” messages. The original
+fixture also treated every API non-2xx response as expected, which was too broad.
 
 GREEN:
 
@@ -159,9 +160,10 @@ pnpm test:e2e -- e2e/smoke.spec.ts e2e/diff-review.spec.ts e2e/connection-diagno
 ```
 
 Result: all 7 Chromium tests passed. The auto fixture now collects console
-errors and checks outbound origins after each test; only matching non-2xx
-responses from the allowed Bitbucket API origin are treated as expected
-diagnostic outcomes. No duplicate per-test console listeners remain.
+errors and checks outbound origins after each test. Its default expected-status
+set is empty; the invalid-token test explicitly opts into 401 and the
+missing-scope test explicitly opts into 403. Every other 4xx/5xx resource
+console error fails the suite. No duplicate per-test console listeners remain.
 
 The final range after this fix is 63 changed paths from baseline `f8eafcd`:
 the one new shared fixture plus the existing Task 5 documentation and test
