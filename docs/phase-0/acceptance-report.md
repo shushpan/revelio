@@ -2,7 +2,9 @@
 
 Date: 2026-08-28
 Branch: `implementation/phase-0`
-Head at evidence capture: `94cd8f1`
+Verification parent: `94cd8f1` (Task 4 fix-round parent, not this report's
+final commit)
+Immutable Task 5 evidence commit: `4e84fb0`
 Application version: `0.1.0`
 
 ## Decision summary
@@ -35,7 +37,7 @@ the task plan's completion criteria.
 
 | ID | Claim or criterion | Automated evidence | Manual browser/release check | Status |
 | --- | --- | --- | --- | --- |
-| P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts`; `e2e/connection-diagnostics.spec.ts` assert fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header check remains manual |
+| P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts`; auto fixture `e2e/fixtures.ts` rejects every request origin except the local server and `https://api.bitbucket.org`; diagnostics E2E asserts fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header check remains manual |
 | P0-02 | Basic authorization is formed from in-memory email/token and is not logged | `src/providers/bitbucket-cloud/auth.test.ts`; connection component tests; E2E checks no token in DOM | Enter only a disposable credential locally and inspect sanitized DevTools metadata, never headers | Proven locally for synthetic values; real-token CORS is unresolved |
 | P0-03 | API origin cannot be overridden by arbitrary input | Request-builder tests reject absolute/foreign paths and mutation-shaped options | None beyond release review of the fixed-origin source | Proven locally |
 | P0-04 | Read adapter validates identity, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts` (synthetic fixtures) | Observe a disposable repository only after live CORS/scopes pass | Proven locally; live schema compatibility remains a gate |
@@ -56,9 +58,9 @@ the task plan's completion criteria.
 | P0-19 | `@pierre/diffs` public API can render a multi-file patch with stable local annotation intent | `DiffReview.test.tsx`, `e2e/diff-review.spec.ts`, ADR 0001; exact pinned version `1.3.6` | Open the production demo at a narrow and wide viewport and check readable diff layout | Proven locally |
 | P0-20 | Large patch preprocessing has a safe worker boundary with cancellation/fallback | `src/workers/patch-worker-client.test.ts`; real-worker E2E; worker source inspection | Optional browser performance observation with synthetic large fixture | Proven locally |
 | P0-21 | Experimental `@pierre/diffs/worker` is not adopted without compatibility evidence | ADR 0001 records public exports and the Phase 0 local-worker decision | Revisit only in the later CSP/annotation/performance gate | Proven locally as a documented decision |
-| P0-22 | Production verification builds and serves the production bundle, with no browser console errors | `pnpm verify`; Playwright production server; 7/7 Chromium flows passed, 0 console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
+| P0-22 | Production verification builds and serves the production bundle, with no browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; Playwright production server; 7/7 Chromium flows passed, 0 console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
 | P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,607-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
-| P0-24 | No secret-like values are present in history, fixtures, traces, logs, or build output | Source/fixture review plus synthetic-only E2E; `.gitignore` excludes runtime artifacts | Before any live run, inspect/export only sanitized metadata under the checklist rules | Proven locally for repository artifacts; live evidence hygiene is manual |
+| P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
 | P0-26 | Phase 0 keeps credentials in memory and defers encrypted persistence | Component/E2E reload/Lock tests; no vault or persistence module exists | None; confirm the local build does not offer a persistence mode | Proven locally |
 | P0-27 | Missing scopes and partial read failures do not expose payloads or falsely claim completion | Synthetic 401/403 and unavailable diagnostics tests; no inbox completion UI exists | Validate later inbox behavior when implemented; do not infer it here | Proven locally for diagnostics; inbox behavior deferred |
@@ -78,12 +80,15 @@ the task plan's completion criteria.
 | Task 4 — diff and worker boundary | Prior report `task-4-report.md`; ADR, patch/worker/DiffReview tests, production E2E and bundle check | Complete and review-fixed |
 | Task 5 — evidence and live gates | This report, `live-bitbucket-checklist.md`, and README | Complete in this commit |
 
-`git diff main...HEAD` was inspected before this report. It contains the
-approved baseline plus the Task 1–4 implementation history: 59 tracked paths,
-with no credential or live provider data. The implementation branch contains
-the following commits after the baseline: `e5782a4`, `85e6639`, `d37f3e8`,
-`970984f`, `6bb160f`, `aaeb35a`, `d2038fd`, `04588e0`, `000ba89`, `38d12b0`,
-and `94cd8f1`. No later-phase work is included.
+`git diff main...HEAD` was inspected before this report. The three Task 5
+documents brought the range after baseline `f8eafcd` to 62 changed paths at
+immutable commit `4e84fb0`; this notation means “changes after the baseline,”
+not that the baseline itself is included in the diff. The current fix adds one
+shared fixture, so the post-fix range is 63 changed paths. The implementation
+branch contains no later-phase work. The prior implementation commits after
+the baseline are `e5782a4`, `85e6639`, `d37f3e8`, `970984f`, `6bb160f`,
+`aaeb35a`, `d2038fd`, `04588e0`, `000ba89`, `38d12b0`, and `94cd8f1`, followed
+by immutable Task 5 documentation commit `4e84fb0` and this focused fix.
 
 ## Verification evidence
 
@@ -105,6 +110,64 @@ Result: exit code 0 on 2026-08-28.
   failed, with 0 browser console errors.
 - No tests were skipped.
 - No failure traces or screenshots were produced by the passing run.
+
+## Targeted artifact and history inspection
+
+The earlier report's broad “no secret-like values” wording was too strong. The
+following bounded checks were run after the clean production build:
+
+```text
+git ls-files | rg -i '(^|/)(\.env($|\.)|dist/|playwright-report/|test-results/|.*\.har$|.*trace.*|.*screenshot.*)'
+```
+
+Result: no tracked paths matched.
+
+```text
+git log --all --oneline -G '(AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|Bearer [A-Za-z0-9._-]{20,})' -- .
+rg -n -I '(AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|Bearer [A-Za-z0-9._-]{20,})' dist
+```
+
+Result: zero matches in Git history under this heuristic and zero matches in
+the current production bundle.
+
+```text
+find dist playwright-report test-results -type f -print 2>/dev/null | awk -F/ '{print $1}' | sort | uniq -c
+```
+
+Result: 323 files under `dist` and one ignored `test-results/.last-run.json`;
+no trace, screenshot, HAR, or Playwright report file was present. These checks
+do not detect arbitrary high-entropy strings, disguised credentials, secrets
+in untracked files outside the inspected directories, or sensitive values a
+future live run might place in browser artifacts. Such evidence remains a
+manual review/deny decision under the live checklist.
+
+## Review fix-round evidence
+
+The original P0-24 wording overstated what repository inspection proved. It is
+now limited to the targeted heuristic and explicitly leaves arbitrary or
+disguised values to manual review. The browser guard was also widened from the
+two tests that had local console listeners to the entire suite.
+
+RED: before the fixture's expected-status handling was added, the focused
+production suite failed the intentional synthetic 401 and 403 diagnostics
+tests because Chromium emitted matching “Failed to load resource” messages.
+
+GREEN:
+
+```text
+pnpm test:e2e -- e2e/smoke.spec.ts e2e/diff-review.spec.ts e2e/connection-diagnostics.spec.ts
+```
+
+Result: all 7 Chromium tests passed. The auto fixture now collects console
+errors and checks outbound origins after each test; only matching non-2xx
+responses from the allowed Bitbucket API origin are treated as expected
+diagnostic outcomes. No duplicate per-test console listeners remain.
+
+The final range after this fix is 63 changed paths from baseline `f8eafcd`:
+the one new shared fixture plus the existing Task 5 documentation and test
+imports. The final fix commit is intentionally not named here because this
+report is committed as part of that commit; use `git log -1` and
+`git diff main...HEAD` for immutable branch-state evidence.
 
 ## Honest completion state
 

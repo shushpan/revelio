@@ -1,13 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("renders the production diff-first review surface with real worker preprocessing", async ({
   page,
 }) => {
-  const consoleErrors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") consoleErrors.push(message.text());
-  });
-
   await page.goto("/?fixture=large");
   await expect(page.getByRole("heading", { name: "Changes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "src/large.ts", exact: true })).toBeVisible();
@@ -30,7 +25,6 @@ test("renders the production diff-first review surface with real worker preproce
   await expect(page.locator(".inline-comment-status")).toContainText(
     "Local inline-comment intent: src/medium-e.ts:3 (additions)",
   );
-  expect(consoleErrors).toEqual([]);
 });
 
 test("keeps the lazy diff bundle out of the normal root until opened", async ({ page }) => {
