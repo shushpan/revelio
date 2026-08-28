@@ -58,7 +58,7 @@ the task plan's completion criteria.
 | P0-19 | `@pierre/diffs` public API can render a multi-file patch with stable local annotation intent | `DiffReview.test.tsx`, `e2e/diff-review.spec.ts`, ADR 0001; exact pinned version `1.3.6` | Open the production demo at a narrow and wide viewport and check readable diff layout | Proven locally |
 | P0-20 | Large patch preprocessing has a safe worker boundary with cancellation/fallback | `src/workers/patch-worker-client.test.ts`; real-worker E2E; worker source inspection | Optional browser performance observation with synthetic large fixture | Proven locally |
 | P0-21 | Experimental `@pierre/diffs/worker` is not adopted without compatibility evidence | ADR 0001 records public exports and the Phase 0 local-worker decision | Revisit only in the later CSP/annotation/performance gate | Proven locally as a documented decision |
-| P0-22 | Production verification builds and serves the production bundle, with no browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and only the missing-scope test opts into 403; Playwright production server; 7/7 Chromium flows passed, 0 console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
+| P0-22 | Production verification builds and serves the production bundle, with no unexpected browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and only the missing-scope test opts into 403; Playwright production server; 7/7 Chromium flows passed, 0 unexpected browser console errors (only those intentional synthetic 401/403 resource messages were allowlisted) | Confirm a fresh machine has the pinned browser installed | Proven locally |
 | P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,607-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
 | P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
@@ -107,7 +107,9 @@ Result: exit code 0 on 2026-08-28.
 - Production Vite build and explicit bundle budget: passed (317,607 initial
   bytes / 350,000; 790,000 largest lazy chunk / 820,000).
 - Playwright against the production preview: 7 Chromium tests passed, 0
-  failed, with 0 browser console errors.
+  failed, with 0 unexpected browser console errors. Only the intentional
+  synthetic 401/403 resource messages in the explicitly opted-in diagnostics
+  tests were allowlisted.
 - No tests were skipped.
 - No failure traces or screenshots were produced by the passing run.
 
