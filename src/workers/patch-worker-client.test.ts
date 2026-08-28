@@ -59,6 +59,7 @@ describe("preprocessPatchAsync", () => {
     worker.emitResult(preprocessPatch(largePatch));
 
     await expect(promise).resolves.toMatchObject({ metadata: { fileCount: 1 } });
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
   });
 
   it("terminates pending work when the caller aborts", async () => {
@@ -87,5 +88,50 @@ describe("preprocessPatchAsync", () => {
 
     await expect(promise).resolves.toEqual(preprocessPatch(largePatch));
     expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to local preprocessing when worker construction fails", async () => {
+    const result = await preprocessPatchAsync(largePatch, {
+      workerFactory: () => {
+        throw new Error("synthetic constructor failure");
+      },
+      workerThresholdBytes: 1,
+    });
+
+    expect(result).toEqual(preprocessPatch(largePatch));
+  });
+
+  it("falls back to local preprocessing when structured clone posting fails", async () => {
+    const worker: PatchWorkerLike = {
+      onmessage: null,
+      onerror: null,
+      terminate: vi.fn(),
+      postMessage: () => {
+        throw new DOMException("synthetic clone failure", "DataCloneError");
+      },
+    };
+
+    await expect(
+      preprocessPatchAsync(largePatch, {
+        workerFactory: () => worker,
+        workerThresholdBytes: 1,
+      }),
+    ).resolves.toEqual(preprocessPatch(largePatch));
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an already-signaled abort win before worker fallback", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      preprocessPatchAsync(largePatch, {
+        signal: controller.signal,
+        workerThresholdBytes: 1,
+        workerFactory: () => {
+          throw new Error("worker should not be constructed");
+        },
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 });

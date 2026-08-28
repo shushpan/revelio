@@ -55,27 +55,47 @@ export function preprocessPatchAsync(
 
   if (options.signal?.aborted) return Promise.reject(createAbortError());
 
-  const worker = options.workerFactory?.() ?? createWorker();
+  let worker: PatchWorkerLike;
+  try {
+    worker = options.workerFactory?.() ?? createWorker();
+  } catch (_error) {
+    if (options.signal?.aborted) return Promise.reject(createAbortError());
+    return Promise.resolve().then(() => {
+      if (options.signal?.aborted) throw createAbortError();
+      return preprocessPatch(patch);
+    });
+  }
   const id = `patch-${++requestSequence}`;
   return new Promise<PreparedPatch>((resolve, reject) => {
     let settled = false;
+    let terminated = false;
+    const terminate = (): void => {
+      if (terminated) return;
+      terminated = true;
+      worker.terminate();
+    };
     const settle = (callback: () => void): void => {
       if (settled) return;
       settled = true;
       options.signal?.removeEventListener("abort", onAbort);
       worker.onmessage = null;
       worker.onerror = null;
+      terminate();
       callback();
     };
     const fallback = (): void => {
+      if (options.signal?.aborted) {
+        settle(() => reject(createAbortError()));
+        return;
+      }
       try {
-        settle(() => resolve(preprocessPatch(patch)));
+        const result = preprocessPatch(patch);
+        settle(() => resolve(result));
       } catch (error) {
         settle(() => reject(error));
       }
     };
     const onAbort = (): void => {
-      worker.terminate();
       settle(() => reject(createAbortError()));
     };
     worker.onmessage = (event): void => {
@@ -84,16 +104,18 @@ export function preprocessPatchAsync(
       if (response.type === "success") {
         settle(() => resolve(response.result));
       } else {
-        worker.terminate();
         fallback();
       }
     };
     worker.onerror = (): void => {
-      worker.terminate();
       fallback();
     };
     options.signal?.addEventListener("abort", onAbort, { once: true });
-    worker.postMessage({ type: "preprocess", id, patch });
+    try {
+      worker.postMessage({ type: "preprocess", id, patch });
+    } catch {
+      fallback();
+    }
   });
 }
 

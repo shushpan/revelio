@@ -19,19 +19,54 @@ const syntheticPatch = [
   "",
 ].join("\n");
 
+const deterministicOrderingPatch = [
+  "diff --git a/src/z.ts b/src/z.ts",
+  "--- a/src/z.ts",
+  "+++ b/src/z.ts",
+  "@@ -1 +1 @@",
+  "-z",
+  "+z",
+  "diff --git a/src/Alpha.ts b/src/Alpha.ts",
+  "--- a/src/Alpha.ts",
+  "+++ b/src/Alpha.ts",
+  "@@ -1 +1 @@",
+  "-alpha",
+  "+alpha",
+  "diff --git a/src/é.ts b/src/é.ts",
+  "--- a/src/é.ts",
+  "+++ b/src/é.ts",
+  "@@ -1 +1 @@",
+  "-accent",
+  "+accent",
+  "",
+].join("\n");
+
 describe("preprocessPatch", () => {
   it("returns deterministic path ordering and hand-checkable patch metadata", () => {
     const result = preprocessPatch(syntheticPatch);
 
     expect(
-      result.files.map(({ id, path, changeType, additions, deletions, hunkCount }) => ({
-        id,
-        path,
-        changeType,
-        additions,
-        deletions,
-        hunkCount,
-      })),
+      result.files.map(
+        ({
+          id,
+          path,
+          changeType,
+          additions,
+          deletions,
+          hunkCount,
+          firstChangedLine,
+          firstChangedSide,
+        }) => ({
+          id,
+          path,
+          changeType,
+          additions,
+          deletions,
+          hunkCount,
+          firstChangedLine,
+          firstChangedSide,
+        }),
+      ),
     ).toEqual([
       {
         id: "src/alpha.ts",
@@ -40,6 +75,8 @@ describe("preprocessPatch", () => {
         additions: 1,
         deletions: 1,
         hunkCount: 1,
+        firstChangedLine: 1,
+        firstChangedSide: "additions",
       },
       {
         id: "src/zeta.ts",
@@ -48,6 +85,8 @@ describe("preprocessPatch", () => {
         additions: 1,
         deletions: 0,
         hunkCount: 1,
+        firstChangedLine: 2,
+        firstChangedSide: "additions",
       },
     ]);
     expect(result.metadata).toEqual({
@@ -62,5 +101,50 @@ describe("preprocessPatch", () => {
 
   it("rejects an empty patch instead of producing an empty review", () => {
     expect(() => preprocessPatch(" ")).toThrow("Patch contains no files");
+  });
+
+  it("sorts paths by deterministic code-unit order", () => {
+    expect(preprocessPatch(deterministicOrderingPatch).files.map((file) => file.path)).toEqual([
+      "src/Alpha.ts",
+      "src/z.ts",
+      "src/é.ts",
+    ]);
+  });
+
+  it("anchors comments to the first real changed line and side", () => {
+    const patch = [
+      "diff --git a/src/added-late.ts b/src/added-late.ts",
+      "--- a/src/added-late.ts",
+      "+++ b/src/added-late.ts",
+      "@@ -1,2 +1,3 @@",
+      " one",
+      " two",
+      "+three",
+      "diff --git a/src/deleted.ts b/src/deleted.ts",
+      "--- a/src/deleted.ts",
+      "+++ b/src/deleted.ts",
+      "@@ -1,2 +1 @@",
+      " keep",
+      "-remove",
+      "diff --git a/src/added-second.ts b/src/added-second.ts",
+      "--- a/src/added-second.ts",
+      "+++ b/src/added-second.ts",
+      "@@ -1 +1,2 @@",
+      " keep",
+      "+second",
+      "",
+    ].join("\n");
+
+    expect(
+      preprocessPatch(patch).files.map(({ path, firstChangedLine, firstChangedSide }) => ({
+        path,
+        firstChangedLine,
+        firstChangedSide,
+      })),
+    ).toEqual([
+      { path: "src/added-late.ts", firstChangedLine: 3, firstChangedSide: "additions" },
+      { path: "src/added-second.ts", firstChangedLine: 2, firstChangedSide: "additions" },
+      { path: "src/deleted.ts", firstChangedLine: 2, firstChangedSide: "deletions" },
+    ]);
   });
 });

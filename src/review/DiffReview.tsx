@@ -1,5 +1,5 @@
-import { CodeView, type CodeViewItem } from "@pierre/diffs/react";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import {
   preprocessPatchAsync,
   type PreprocessPatchAsyncOptions,
@@ -28,6 +28,7 @@ export function DiffReview({
   const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [error, setError] = useState<string | null>(null);
   const [lastIntent, setLastIntent] = useState<InlineCommentIntent | null>(null);
+  const codeViewRef = useRef<CodeViewHandle<InlineCommentIntent>>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -53,24 +54,42 @@ export function DiffReview({
       id: file.id,
       type: "diff",
       fileDiff: file.fileDiff,
-      annotations: [
-        {
-          side: "additions",
-          lineNumber: 1,
-          metadata: {
-            path: file.path,
-            line: 1,
-            side: "additions",
-          },
-        },
-      ],
+      annotations:
+        file.firstChangedLine !== undefined && file.firstChangedSide !== undefined
+          ? [
+              {
+                side: file.firstChangedSide,
+                lineNumber: file.firstChangedLine,
+                metadata: {
+                  path: file.path,
+                  line: file.firstChangedLine,
+                  side: file.firstChangedSide,
+                },
+              },
+            ]
+          : undefined,
     }));
   }, [prepared]);
 
   const activeFile = prepared?.files.find((file) => file.path === activePath) ?? prepared?.files[0];
-  const inlineComment = activeFile
-    ? { path: activeFile.path, line: 1, side: "additions" as const }
-    : null;
+  const inlineComment =
+    activeFile?.firstChangedLine !== undefined && activeFile.firstChangedSide !== undefined
+      ? {
+          path: activeFile.path,
+          line: activeFile.firstChangedLine,
+          side: activeFile.firstChangedSide,
+        }
+      : null;
+
+  const navigateToFile = (file: PreparedPatch["files"][number]): void => {
+    setActivePath(file.path);
+    codeViewRef.current?.scrollTo({
+      type: "item",
+      id: file.id,
+      align: "start",
+      behavior: "instant",
+    });
+  };
 
   return (
     <section className="review-card" aria-labelledby="changes-title">
@@ -111,7 +130,7 @@ export function DiffReview({
                 key={file.id}
                 className="file-nav-button"
                 aria-current={file.path === activeFile?.path ? "page" : undefined}
-                onClick={() => setActivePath(file.path)}
+                onClick={() => navigateToFile(file)}
               >
                 {file.path}
               </button>
@@ -134,8 +153,9 @@ export function DiffReview({
               Local inline-comment intent: {lastIntent.path}:{lastIntent.line} ({lastIntent.side})
             </p>
           ) : null}
-          <div className="diff-view" data-virtualized="true">
+          <div className="diff-view">
             <CodeView
+              ref={codeViewRef}
               items={items}
               disableWorkerPool
               options={{

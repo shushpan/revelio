@@ -1,21 +1,35 @@
 import "../styles.css";
 import type { JSX } from "react";
+import { lazy, Suspense, useState } from "react";
 import { ConnectionDiagnostics } from "../connection/ConnectionDiagnostics";
-import { DiffReview } from "../review/DiffReview";
-import smallPatch from "../review/__fixtures__/small.patch?raw";
-import largePatch from "../review/__fixtures__/large.patch?raw";
+
+const DiffDemo = lazy(() =>
+  import("../review/DiffDemo").then(({ DiffDemo: demo }) => ({ default: demo })),
+);
 
 export function App(): JSX.Element {
-  const patch =
-    new URLSearchParams(window.location.search).get("fixture") === "large"
-      ? largePatch
-      : smallPatch;
+  const largeFixture = new URLSearchParams(window.location.search).get("fixture") === "large";
+  const [isDiffDemoOpen, setIsDiffDemoOpen] = useState(largeFixture);
   return (
     <>
       <ConnectionDiagnostics />
-      <main className="app-shell review-shell">
-        <DiffReview patch={patch} />
-      </main>
+      <div className="app-shell review-shell">
+        {isDiffDemoOpen ? (
+          <Suspense
+            fallback={
+              <p className="review-status" role="status">
+                Loading diff demo…
+              </p>
+            }
+          >
+            <DiffDemo large={largeFixture} />
+          </Suspense>
+        ) : (
+          <button type="button" className="primary-button" onClick={() => setIsDiffDemoOpen(true)}>
+            Open diff demo
+          </button>
+        )}
+      </div>
     </>
   );
 }

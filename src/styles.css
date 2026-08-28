@@ -303,6 +303,8 @@ button:disabled {
 
 .diff-view > div {
   min-height: 18rem;
+  max-height: 42rem;
+  overflow: auto;
 }
 
 @media (max-width: 640px) {

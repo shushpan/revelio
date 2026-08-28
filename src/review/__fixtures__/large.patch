@@ -65,3 +65,178 @@ index 1111111..2222222 100644
 +export const generated58 = 58;
 +export const generated59 = 59;
 +export const generated60 = 60;
+diff --git a/src/medium-a.ts b/src/medium-a.ts
+index 1111111..2222222 100644
+--- a/src/medium-a.ts
++++ b/src/medium-a.ts
+@@ -1,2 +1,30 @@
+ export const first = 1;
+ export const second = 2;
++export const a01 = 1;
++export const a02 = 2;
++export const a03 = 3;
++export const a04 = 4;
++export const a05 = 5;
++export const a06 = 6;
++export const a07 = 7;
++export const a08 = 8;
++export const a09 = 9;
++export const a10 = 10;
++export const a11 = 11;
++export const a12 = 12;
++export const a13 = 13;
++export const a14 = 14;
++export const a15 = 15;
++export const a16 = 16;
++export const a17 = 17;
++export const a18 = 18;
++export const a19 = 19;
++export const a20 = 20;
++export const a21 = 21;
++export const a22 = 22;
++export const a23 = 23;
++export const a24 = 24;
++export const a25 = 25;
++export const a26 = 26;
++export const a27 = 27;
++export const a28 = 28;
+diff --git a/src/medium-b.ts b/src/medium-b.ts
+index 3333333..4444444 100644
+--- a/src/medium-b.ts
++++ b/src/medium-b.ts
+@@ -1,2 +1,30 @@
+ export const first = 1;
+ export const second = 2;
++export const b01 = 1;
++export const b02 = 2;
++export const b03 = 3;
++export const b04 = 4;
++export const b05 = 5;
++export const b06 = 6;
++export const b07 = 7;
++export const b08 = 8;
++export const b09 = 9;
++export const b10 = 10;
++export const b11 = 11;
++export const b12 = 12;
++export const b13 = 13;
++export const b14 = 14;
++export const b15 = 15;
++export const b16 = 16;
++export const b17 = 17;
++export const b18 = 18;
++export const b19 = 19;
++export const b20 = 20;
++export const b21 = 21;
++export const b22 = 22;
++export const b23 = 23;
++export const b24 = 24;
++export const b25 = 25;
++export const b26 = 26;
++export const b27 = 27;
++export const b28 = 28;
+diff --git a/src/medium-c.ts b/src/medium-c.ts
+index 5555555..6666666 100644
+--- a/src/medium-c.ts
++++ b/src/medium-c.ts
+@@ -1,2 +1,30 @@
+ export const first = 1;
+ export const second = 2;
++export const c01 = 1;
++export const c02 = 2;
++export const c03 = 3;
++export const c04 = 4;
++export const c05 = 5;
++export const c06 = 6;
++export const c07 = 7;
++export const c08 = 8;
++export const c09 = 9;
++export const c10 = 10;
++export const c11 = 11;
++export const c12 = 12;
++export const c13 = 13;
++export const c14 = 14;
++export const c15 = 15;
++export const c16 = 16;
++export const c17 = 17;
++export const c18 = 18;
++export const c19 = 19;
++export const c20 = 20;
++export const c21 = 21;
++export const c22 = 22;
++export const c23 = 23;
++export const c24 = 24;
++export const c25 = 25;
++export const c26 = 26;
++export const c27 = 27;
++export const c28 = 28;
+diff --git a/src/medium-d.ts b/src/medium-d.ts
+index 7777777..8888888 100644
+--- a/src/medium-d.ts
++++ b/src/medium-d.ts
+@@ -1,2 +1,30 @@
+ export const first = 1;
+ export const second = 2;
++export const d01 = 1;
++export const d02 = 2;
++export const d03 = 3;
++export const d04 = 4;
++export const d05 = 5;
++export const d06 = 6;
++export const d07 = 7;
++export const d08 = 8;
++export const d09 = 9;
++export const d10 = 10;
++export const d11 = 11;
++export const d12 = 12;
++export const d13 = 13;
++export const d14 = 14;
++export const d15 = 15;
++export const d16 = 16;
++export const d17 = 17;
++export const d18 = 18;
++export const d19 = 19;
++export const d20 = 20;
++export const d21 = 21;
++export const d22 = 22;
++export const d23 = 23;
++export const d24 = 24;
++export const d25 = 25;
++export const d26 = 26;
++export const d27 = 27;
++export const d28 = 28;
+diff --git a/src/medium-e.ts b/src/medium-e.ts
+index 9999999..aaaaaaa 100644
+--- a/src/medium-e.ts
++++ b/src/medium-e.ts
+@@ -1,2 +1,30 @@
+ export const first = 1;
+ export const second = 2;
++export const e01 = 1;
++export const e02 = 2;
++export const e03 = 3;
++export const e04 = 4;
++export const e05 = 5;
++export const e06 = 6;
++export const e07 = 7;
++export const e08 = 8;
++export const e09 = 9;
++export const e10 = 10;
++export const e11 = 11;
++export const e12 = 12;
++export const e13 = 13;
++export const e14 = 14;
++export const e15 = 15;
++export const e16 = 16;
++export const e17 = 17;
++export const e18 = 18;
++export const e19 = 19;
++export const e20 = 20;
++export const e21 = 21;
++export const e22 = 22;
++export const e23 = 23;
++export const e24 = 24;
++export const e25 = 25;
++export const e26 = 26;
++export const e27 = 27;
++export const e28 = 28;

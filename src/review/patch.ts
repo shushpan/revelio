@@ -7,6 +7,8 @@ export interface PreparedPatchFile {
   readonly additions: number;
   readonly deletions: number;
   readonly hunkCount: number;
+  readonly firstChangedLine?: number;
+  readonly firstChangedSide?: "additions" | "deletions";
   readonly fileDiff: FileDiffMetadata;
 }
 
@@ -44,6 +46,22 @@ export function preprocessPatch(patch: string): PreparedPatch {
         },
         { additions: 0, deletions: 0 },
       );
+      const firstChanged = fileDiff.hunks.flatMap((hunk) =>
+        hunk.hunkContent
+          .filter((content) => content.type === "change")
+          .map((content) => {
+            if (content.additions > 0) {
+              return {
+                line: hunk.additionStart + content.additionLineIndex,
+                side: "additions" as const,
+              };
+            }
+            return {
+              line: hunk.deletionStart + content.deletionLineIndex,
+              side: "deletions" as const,
+            };
+          }),
+      )[0];
       return {
         id: fileDiff.name,
         path: fileDiff.name,
@@ -51,10 +69,12 @@ export function preprocessPatch(patch: string): PreparedPatch {
         additions: counts.additions,
         deletions: counts.deletions,
         hunkCount: fileDiff.hunks.length,
+        firstChangedLine: firstChanged?.line,
+        firstChangedSide: firstChanged?.side,
         fileDiff,
       } satisfies PreparedPatchFile;
     })
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
 
   return {
     files: preparedFiles,
