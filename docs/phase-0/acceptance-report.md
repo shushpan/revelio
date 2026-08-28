@@ -37,13 +37,13 @@ the task plan's completion criteria.
 
 | ID | Claim or criterion | Automated evidence | Manual browser/release check | Status |
 | --- | --- | --- | --- | --- |
-| P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts`; auto fixture `e2e/fixtures.ts` rejects every request origin except the local server and `https://api.bitbucket.org`; diagnostics E2E asserts fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header check remains manual |
+| P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts` asserts the fixed origin, GET-only shape, and `Request.cache === "no-store"` for authenticated requests; auto fixture `e2e/fixtures.ts` rejects every request origin except the local server and `https://api.bitbucket.org`; diagnostics E2E asserts fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header and browser cache-mode checks remain manual |
 | P0-02 | Basic authorization is formed from in-memory email/token and is not logged | `src/providers/bitbucket-cloud/auth.test.ts`; connection component tests; E2E checks no token in DOM | Enter only a disposable credential locally and inspect sanitized DevTools metadata, never headers | Proven locally for synthetic values; real-token CORS is unresolved |
 | P0-03 | API origin cannot be overridden by arbitrary input | Request-builder tests reject absolute/foreign paths and mutation-shaped options | None beyond release review of the fixed-origin source | Proven locally |
 | P0-04 | Read adapter validates identity, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts` (synthetic fixtures) | Observe a disposable repository only after live CORS/scopes pass | Proven locally; live schema compatibility remains a gate |
-| P0-05 | Pagination follows the adapter's bounded safe behavior | `client.test.ts` covers page progression, repeated marker, and page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
+| P0-05 | Pagination follows opaque returned links within the adapter's bounded safe behavior | `src/providers/bitbucket-cloud/client.test.ts` separately covers opaque query/cursor preservation, exact endpoint/origin validation, repeated links, and the 100-page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
 | P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases | Run the local form with a disposable credential and inspect only capability statuses | Proven locally; real required scopes unresolved |
-| P0-07 | Auth, permission, network/CORS, rate-limit, server, decode, pagination, and unavailable failures are distinct and redacted | Diagnostics unit tests and component/E2E invalid-token, missing-scope, cancellation flows | Confirm only status class/capability result is retained in any live note | Proven locally; live CORS classification unresolved |
+| P0-07 | Auth, permission, network/CORS, rate-limit, and decode diagnostics are distinct and redacted; client pagination failures are redacted | `src/providers/bitbucket-cloud/diagnostics.test.ts` covers 401/403/429/network/decode and redaction; `src/providers/bitbucket-cloud/client.test.ts` covers client pagination errors and redaction; component/E2E invalid-token, missing-scope, and cancellation flows cover UI handling. Diagnostics HTTP 500 and diagnostics-pagination are not exercised or claimed here. | Confirm only status class/capability result is retained in any live note | Proven locally for exercised classes; live CORS classification unresolved |
 | P0-08 | Credentials clear on Lock/reload and no Phase 0 persistence exists | `ConnectionDiagnostics.test.tsx`; E2E Lock/reload flow; source inspection finds no storage integration | Repeat with a disposable credential, then close/reload the tab | Proven locally |
 | P0-09 | Read probes are sequential, cancellable, and limited to expected endpoint templates | Diagnostics tests assert order, abort behavior, and endpoint templates; E2E rejects unexpected paths | Observe the browser Network panel only long enough to record an allowlisted status class | Proven locally |
 | P0-10 | Mutation boundaries are known without executing remote writes | Diagnostics tests cover inert POST shapes for approve, Request changes, general comment, and inline comment | Do not send a mutation from this build; use the gated procedure only when a controlled probe exists | Proven locally as shape only; all remote mutations unresolved |
@@ -59,7 +59,7 @@ the task plan's completion criteria.
 | P0-20 | Large patch preprocessing has a safe worker boundary with cancellation/fallback | `src/workers/patch-worker-client.test.ts`; real-worker E2E; worker source inspection | Optional browser performance observation with synthetic large fixture | Proven locally |
 | P0-21 | Experimental `@pierre/diffs/worker` is not adopted without compatibility evidence | ADR 0001 records public exports and the Phase 0 local-worker decision | Revisit only in the later CSP/annotation/performance gate | Proven locally as a documented decision |
 | P0-22 | Production verification builds and serves the production bundle, with no unexpected browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and only the missing-scope test opts into 403; Playwright production server; 7/7 Chromium flows passed, 0 unexpected browser console errors (only those intentional synthetic 401/403 resource messages were allowlisted) | Confirm a fresh machine has the pinned browser installed | Proven locally |
-| P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,607-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
+| P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,678-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
 | P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
 | P0-26 | Phase 0 keeps credentials in memory and defers encrypted persistence | Component/E2E reload/Lock tests; no vault or persistence module exists | None; confirm the local build does not offer a persistence mode | Proven locally |
@@ -103,8 +103,8 @@ Result: exit code 0 on 2026-08-28.
 - Biome format: 51 files checked, clean.
 - Biome lint: 52 files checked, clean.
 - TypeScript project build: passed.
-- Vitest: 12 files, 52 tests passed.
-- Production Vite build and explicit bundle budget: passed (317,607 initial
+- Vitest: 12 files, 56 tests passed.
+- Production Vite build and explicit bundle budget: passed (317,678 initial
   bytes / 350,000; 790,000 largest lazy chunk / 820,000).
 - Playwright against the production preview: 7 Chromium tests passed, 0
   failed, with 0 unexpected browser console errors. Only the intentional
@@ -166,6 +166,25 @@ errors and checks outbound origins after each test. Its default expected-status
 set is empty; the invalid-token test explicitly opts into 401 and the
 missing-scope test explicitly opts into 403. Every other 4xx/5xx resource
 console error fails the suite. No duplicate per-test console listeners remain.
+
+## Final review fix evidence
+
+The provider client now follows each opaque Bitbucket `next` URL verbatim. Its
+pagination tests separately prove non-derivable cursor/query preservation,
+fixed-origin and exact-endpoint-family validation, repeated-link rejection,
+and the 100-page ceiling. Returned pagination URLs are never included in the
+redacted `PaginationError` value. The request-builder tests assert
+`Request.cache === "no-store"` for authenticated GET requests.
+
+No production-browser cache-mode evidence is claimed: Playwright's intercepted
+request surface does not expose the Fetch `Request.cache` mode, and `cache`
+does not emit a deterministic HTTP request header. This is therefore covered
+by the unit/source evidence above, while deployment cache behavior remains a
+manual release check.
+
+The diagnostics evidence was narrowed to the cases actually tested. It does
+not claim that diagnostics tests exercise HTTP 500 or pagination failures;
+those are not part of the local diagnostics test evidence.
 
 The final range after this fix is 63 changed paths from baseline `f8eafcd`:
 the one new shared fixture plus the existing Task 5 documentation and test

@@ -12,6 +12,7 @@ describe("Bitbucket request builder", () => {
 
     expect(request.url).toBe("https://api.bitbucket.org/2.0/user");
     expect(request.method).toBe("GET");
+    expect(request.cache).toBe("no-store");
     expect(request.headers.get("Accept")).toBe("application/json");
     expect(request.headers.get("Authorization")).toBe(
       "Basic cmV2aWV3ZXJAZXhhbXBsZS50ZXN0OnN5bnRoZXRpYy10b2tlbg==",
@@ -24,6 +25,7 @@ describe("Bitbucket request builder", () => {
     });
 
     expect(request.method).toBe("GET");
+    expect(request.cache).toBe("no-store");
     expect(request.body).toBeNull();
     expect(request.headers.get("Content-Type")).toBeNull();
     expect(request.headers.get("X-Unsafe-Override")).toBeNull();

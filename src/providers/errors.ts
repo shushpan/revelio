@@ -44,7 +44,8 @@ export type ProviderError =
       readonly _tag: "PaginationError";
       readonly message:
         | "Provider pagination repeated a page marker"
-        | "Provider pagination exceeded its safety limit";
+        | "Provider pagination exceeded its safety limit"
+        | "Provider pagination returned an unsafe next link";
       readonly operation: string;
     };
 

@@ -10,7 +10,7 @@ import type {
 import type { ProviderError } from "../errors";
 import { decodeError } from "../errors";
 import type { BitbucketCredentials } from "./auth";
-import { buildBitbucketRequest } from "./request";
+import { buildBitbucketRequest, buildBitbucketRequestForUrl, BITBUCKET_API_BASE } from "./request";
 import { decodeActivityPage, decodePullRequestPage, decodeUser, mapPullRequest } from "./schemas";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
@@ -67,7 +67,12 @@ const requestJson = (
 ): Effect.Effect<unknown, ProviderError> =>
   Effect.gen(function* () {
     const response = yield* Effect.tryPromise({
-      try: () => fetchImplementation(buildBitbucketRequest(path, credentials)),
+      try: () =>
+        fetchImplementation(
+          path.startsWith("/")
+            ? buildBitbucketRequest(path, credentials)
+            : buildBitbucketRequestForUrl(path, credentials),
+        ),
       catch: () =>
         ({
           _tag: "NetworkError",
@@ -89,39 +94,72 @@ const requestJson = (
     });
   });
 
+type PageResult<A> = {
+  readonly values: ReadonlyArray<A>;
+  readonly next?: string;
+};
+
 const collectPages = <A>(
   operation: string,
-  fetchPage: (
-    page: number,
-  ) => Effect.Effect<{ readonly values: ReadonlyArray<A>; readonly next?: string }, ProviderError>,
+  initialPath: string,
+  endpointPath: string,
+  fetchPage: (path: string) => Effect.Effect<PageResult<A>, ProviderError>,
 ): Effect.Effect<ReadonlyArray<A>, ProviderError> =>
   Effect.gen(function* () {
     const values: A[] = [];
     const seenMarkers = new Set<string>();
-    let page = 1;
-    let hasNext = true;
-    while (hasNext) {
-      if (page > 100) {
+    const apiUrl = new URL(BITBUCKET_API_BASE);
+    let path: string | undefined = initialPath;
+    let pageCount = 0;
+    while (path !== undefined) {
+      if (pageCount >= 100) {
         return yield* Effect.fail({
           _tag: "PaginationError",
           message: "Provider pagination exceeded its safety limit",
           operation,
         } as const);
       }
-      const current = yield* fetchPage(page);
+      const current: PageResult<A> = yield* fetchPage(path);
+      pageCount += 1;
       values.push(...current.values);
-      hasNext = current.next !== undefined;
-      if (current.next !== undefined) {
-        if (seenMarkers.has(current.next)) {
-          return yield* Effect.fail({
-            _tag: "PaginationError",
-            message: "Provider pagination repeated a page marker",
-            operation,
-          } as const);
-        }
-        seenMarkers.add(current.next);
+      if (current.next === undefined) {
+        path = undefined;
+        continue;
       }
-      page += 1;
+      let nextUrl: URL;
+      try {
+        nextUrl = new URL(current.next);
+      } catch {
+        return yield* Effect.fail({
+          _tag: "PaginationError",
+          message: "Provider pagination returned an unsafe next link",
+          operation,
+        } as const);
+      }
+      if (
+        current.next.trim() !== current.next ||
+        nextUrl.origin !== apiUrl.origin ||
+        nextUrl.username !== "" ||
+        nextUrl.password !== "" ||
+        nextUrl.pathname !== `${apiUrl.pathname}${endpointPath}` ||
+        nextUrl.hash !== ""
+      ) {
+        return yield* Effect.fail({
+          _tag: "PaginationError",
+          message: "Provider pagination returned an unsafe next link",
+          operation,
+        } as const);
+      }
+      const marker = nextUrl.href;
+      if (seenMarkers.has(marker)) {
+        return yield* Effect.fail({
+          _tag: "PaginationError",
+          message: "Provider pagination repeated a page marker",
+          operation,
+        } as const);
+      }
+      seenMarkers.add(marker);
+      path = current.next;
     }
     return values;
   });
@@ -143,22 +181,30 @@ export const makeBitbucketClient = (
   const listOpenPullRequests = (
     repository: RepositoryRef,
   ): Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError> =>
-    collectPages("open pull requests", (page) => {
-      const path = `${repositoryPath(repository)}/pullrequests?state=OPEN&page=${page}`;
-      return requestJson(path, "open pull requests", credentials, fetchImplementation).pipe(
-        Effect.flatMap(decodePullRequestPage),
-      );
-    }).pipe(Effect.map((values) => values.map((value) => mapPullRequest(value, repository))));
+    collectPages(
+      "open pull requests",
+      `${repositoryPath(repository)}/pullrequests?state=OPEN&page=1`,
+      `${repositoryPath(repository)}/pullrequests`,
+      (path) => {
+        return requestJson(path, "open pull requests", credentials, fetchImplementation).pipe(
+          Effect.flatMap(decodePullRequestPage),
+        );
+      },
+    ).pipe(Effect.map((values) => values.map((value) => mapPullRequest(value, repository))));
 
   const getReviewSignals = (
     pullRequest: PullRequestRef,
   ): Effect.Effect<ReadonlyArray<ReviewSignal>, ProviderError> =>
-    collectPages("review activity", (page) => {
-      const path = `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity?page=${page}`;
-      return requestJson(path, "review activity", credentials, fetchImplementation).pipe(
-        Effect.flatMap(decodeActivityPage),
-      );
-    });
+    collectPages(
+      "review activity",
+      `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity?page=1`,
+      `${repositoryPath(pullRequest.repository)}/pullrequests/${pullRequest.id}/activity`,
+      (path) => {
+        return requestJson(path, "review activity", credentials, fetchImplementation).pipe(
+          Effect.flatMap(decodeActivityPage),
+        );
+      },
+    );
 
   return {
     id: "bitbucket-cloud",

@@ -12,9 +12,9 @@ const credentials = {
 
 describe("Bitbucket read client", () => {
   it("normalizes identity, all pull-request pages, and review activity without mutation methods", async () => {
-    const requests: string[] = [];
+    const requests: Request[] = [];
     const fetcher = vi.fn(async (request: Request) => {
-      requests.push(request.url);
+      requests.push(request);
       if (request.url.endsWith("/user")) return new Response(JSON.stringify(user), { status: 200 });
       if (request.url.includes("page=2")) {
         return new Response(JSON.stringify({ ...pullRequestPage, next: undefined, values: [] }), {
@@ -55,13 +55,76 @@ describe("Bitbucket read client", () => {
       { kind: "other" },
     ]);
 
-    expect(requests).toEqual([
+    expect(requests.map((request) => request.url)).toEqual([
       "https://api.bitbucket.org/2.0/user",
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&page=1",
-      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&page=2",
+      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?page=2",
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/activity?page=1",
     ]);
+    expect(requests.every((request) => request.cache === "no-store")).toBe(true);
     expect(client.capabilities.canWriteReviews).toBe(false);
+  });
+
+  it("follows an opaque next link without reconstructing pagination query state", async () => {
+    const requests: string[] = [];
+    const opaqueNext =
+      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&cursor=opaque%2Ftoken&page=7";
+    const fetcher = vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      if (request.url.includes("cursor=opaque%2Ftoken")) {
+        return new Response(JSON.stringify({ ...pullRequestPage, values: [], next: undefined }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ ...pullRequestPage, values: [], next: opaqueNext }), {
+        status: 200,
+      });
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+
+    await expect(
+      Effect.runPromise(client.listOpenPullRequests({ workspace: "acme", slug: "review" })),
+    ).resolves.toEqual([]);
+
+    expect(requests).toEqual([
+      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&page=1",
+      opaqueNext,
+    ]);
+  });
+
+  it.each([
+    [
+      "foreign origin",
+      "https://evil.example/2.0/repositories/acme/review/pullrequests?cursor=opaque",
+    ],
+    [
+      "non-API path",
+      "https://api.bitbucket.org/v1/repositories/acme/review/pullrequests?cursor=opaque",
+    ],
+    [
+      "wrong endpoint family",
+      "https://api.bitbucket.org/2.0/repositories/acme/review/comments?cursor=opaque",
+    ],
+  ])("rejects a %s returned pagination link", async (_description, next) => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ ...pullRequestPage, values: [], next }), { status: 200 }),
+    );
+    const client = makeBitbucketClient(credentials, fetcher);
+    const result = await Effect.runPromise(
+      Effect.either(client.listOpenPullRequests({ workspace: "acme", slug: "review" })),
+    );
+
+    expect(result).toMatchObject({
+      _tag: "Left",
+      left: {
+        _tag: "PaginationError",
+        message: "Provider pagination returned an unsafe next link",
+        operation: "open pull requests",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("opaque");
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("fails repeated and over-ceiling pagination instead of looping forever", async () => {
@@ -83,7 +146,7 @@ describe("Bitbucket read client", () => {
       return new Response(
         JSON.stringify({
           ...pullRequestPage,
-          next: `https://api.bitbucket.org/2.0/page/${endlessPageNumber + 1}`,
+          next: `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?cursor=${endlessPageNumber}`,
         }),
         { status: 200 },
       );
