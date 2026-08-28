@@ -1,0 +1,69 @@
+import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
+
+export interface PreparedPatchFile {
+  readonly id: string;
+  readonly path: string;
+  readonly changeType: FileDiffMetadata["type"];
+  readonly additions: number;
+  readonly deletions: number;
+  readonly hunkCount: number;
+  readonly fileDiff: FileDiffMetadata;
+}
+
+export interface PreparedPatchMetadata {
+  readonly fileCount: number;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly hunkCount: number;
+  readonly inputBytes: number;
+}
+
+export interface PreparedPatch {
+  readonly files: readonly PreparedPatchFile[];
+  readonly metadata: PreparedPatchMetadata;
+}
+
+export function preprocessPatch(patch: string): PreparedPatch {
+  const parsed = parsePatchFiles(patch, "fast-review", true);
+  const files = parsed.flatMap((part) => part.files);
+  if (files.length === 0) {
+    throw new Error("Patch contains no files");
+  }
+
+  const preparedFiles = files
+    .map((fileDiff) => {
+      const counts = fileDiff.hunks.reduce(
+        (total, hunk) => {
+          for (const content of hunk.hunkContent) {
+            if (content.type === "change") {
+              total.additions += content.additions;
+              total.deletions += content.deletions;
+            }
+          }
+          return total;
+        },
+        { additions: 0, deletions: 0 },
+      );
+      return {
+        id: fileDiff.name,
+        path: fileDiff.name,
+        changeType: fileDiff.type,
+        additions: counts.additions,
+        deletions: counts.deletions,
+        hunkCount: fileDiff.hunks.length,
+        fileDiff,
+      } satisfies PreparedPatchFile;
+    })
+    .sort((left, right) => left.path.localeCompare(right.path));
+
+  return {
+    files: preparedFiles,
+    metadata: {
+      fileCount: preparedFiles.length,
+      additions: preparedFiles.reduce((total, file) => total + file.additions, 0),
+      deletions: preparedFiles.reduce((total, file) => total + file.deletions, 0),
+      hunkCount: preparedFiles.reduce((total, file) => total + file.hunkCount, 0),
+      inputBytes: new TextEncoder().encode(patch).byteLength,
+    },
+  };
+}

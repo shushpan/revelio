@@ -1,0 +1,14 @@
+diff --git a/src/alpha.ts b/src/alpha.ts
+index 1111111..2222222 100644
+--- a/src/alpha.ts
++++ b/src/alpha.ts
+@@ -1 +1 @@
+-export const alpha = 1;
++export const alpha = 2;
+diff --git a/src/zeta.ts b/src/zeta.ts
+index 3333333..4444444 100644
+--- a/src/zeta.ts
++++ b/src/zeta.ts
+@@ -1 +1,2 @@
+ export const zeta = 1;
++export const zetaNext = 2;

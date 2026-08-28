@@ -217,3 +217,100 @@ button:disabled {
   background: #2c8a68;
   box-shadow: 0 0 0 0.25rem rgb(44 138 104 / 15%);
 }
+
+.review-shell {
+  padding-top: 0;
+}
+
+.review-card {
+  overflow: hidden;
+  border: 1px solid #d9d4ca;
+  border-radius: 0.75rem;
+  background: #fffefa;
+  box-shadow: 0 1rem 2rem rgb(48 45 38 / 5%);
+}
+
+.review-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.25rem;
+  border-bottom: 1px solid #d9d4ca;
+}
+
+.review-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.025em;
+}
+
+.layout-toggle {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.layout-toggle .secondary-button[aria-pressed="true"] {
+  color: #fff;
+  background: #214c80;
+}
+
+.review-summary,
+.review-status,
+.inline-comment-status {
+  padding: 0.75rem 1.25rem;
+  margin: 0;
+  color: #52647d;
+  font-size: 0.9rem;
+}
+
+.review-file-nav {
+  display: flex;
+  gap: 0.3rem;
+  overflow-x: auto;
+  padding: 0.5rem 1.25rem;
+  border-top: 1px solid #ebe7df;
+  border-bottom: 1px solid #ebe7df;
+}
+
+.file-nav-button {
+  padding: 0.35rem 0.55rem;
+  color: #52647d;
+  background: transparent;
+  font-size: 0.83rem;
+  white-space: nowrap;
+}
+
+.file-nav-button[aria-current="page"] {
+  color: #214c80;
+  background: #e7edf5;
+}
+
+.inline-comment-button {
+  margin: 0.75rem 1.25rem;
+  padding: 0.45rem 0.65rem;
+  color: #214c80;
+  background: #eef3f9;
+  font-size: 0.83rem;
+}
+
+.diff-view {
+  min-height: 18rem;
+  max-height: 42rem;
+  overflow: auto;
+  border-top: 1px solid #d9d4ca;
+}
+
+.diff-view > div {
+  min-height: 18rem;
+}
+
+@media (max-width: 640px) {
+  .review-header {
+    display: block;
+  }
+
+  .layout-toggle {
+    margin-top: 0.75rem;
+  }
+}

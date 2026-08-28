@@ -1,0 +1,67 @@
+diff --git a/src/large.ts b/src/large.ts
+index 1111111..2222222 100644
+--- a/src/large.ts
++++ b/src/large.ts
+@@ -1,2 +1,62 @@
+ export const first = 1;
+ export const second = 2;
++export const generated01 = 1;
++export const generated02 = 2;
++export const generated03 = 3;
++export const generated04 = 4;
++export const generated05 = 5;
++export const generated06 = 6;
++export const generated07 = 7;
++export const generated08 = 8;
++export const generated09 = 9;
++export const generated10 = 10;
++export const generated11 = 11;
++export const generated12 = 12;
++export const generated13 = 13;
++export const generated14 = 14;
++export const generated15 = 15;
++export const generated16 = 16;
++export const generated17 = 17;
++export const generated18 = 18;
++export const generated19 = 19;
++export const generated20 = 20;
++export const generated21 = 21;
++export const generated22 = 22;
++export const generated23 = 23;
++export const generated24 = 24;
++export const generated25 = 25;
++export const generated26 = 26;
++export const generated27 = 27;
++export const generated28 = 28;
++export const generated29 = 29;
++export const generated30 = 30;
++export const generated31 = 31;
++export const generated32 = 32;
++export const generated33 = 33;
++export const generated34 = 34;
++export const generated35 = 35;
++export const generated36 = 36;
++export const generated37 = 37;
++export const generated38 = 38;
++export const generated39 = 39;
++export const generated40 = 40;
++export const generated41 = 41;
++export const generated42 = 42;
++export const generated43 = 43;
++export const generated44 = 44;
++export const generated45 = 45;
++export const generated46 = 46;
++export const generated47 = 47;
++export const generated48 = 48;
++export const generated49 = 49;
++export const generated50 = 50;
++export const generated51 = 51;
++export const generated52 = 52;
++export const generated53 = 53;
++export const generated54 = 54;
++export const generated55 = 55;
++export const generated56 = 56;
++export const generated57 = 57;
++export const generated58 = 58;
++export const generated59 = 59;
++export const generated60 = 60;
