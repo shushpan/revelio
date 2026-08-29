@@ -4,6 +4,7 @@ import type {
   PullRequestRef,
   PullRequestSummary,
   ProviderUser,
+  RepositoryDiscoveryResult,
   RepositoryRef,
   ReviewSignal,
 } from "../contracts";
@@ -12,9 +13,20 @@ import { decodeError } from "../errors";
 import type { BitbucketCredentials } from "./auth";
 import { mapBitbucketHttpError } from "./http-error";
 import { buildBitbucketRequest, buildBitbucketRequestForUrl, BITBUCKET_API_BASE } from "./request";
-import { decodeActivityPage, decodePullRequestPage, decodeUser, mapPullRequest } from "./schemas";
+import {
+  decodeActivityPage,
+  decodePullRequestPage,
+  decodeRepositoryPage,
+  decodeUser,
+  decodeWorkspacePage,
+  mapPullRequest,
+} from "./schemas";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
+
+export interface BitbucketClientOptions {
+  readonly signal?: AbortSignal;
+}
 
 const requestJson = (
   path: string,
@@ -22,14 +34,23 @@ const requestJson = (
   endpoint: string,
   credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation,
+  signal?: AbortSignal,
 ): Effect.Effect<unknown, ProviderError> =>
   Effect.gen(function* () {
+    if (signal?.aborted) {
+      return yield* Effect.fail({
+        _tag: "NetworkError",
+        message: "Provider could not be reached",
+        operation,
+        endpoint,
+      } as const);
+    }
     const response = yield* Effect.tryPromise({
       try: () =>
         fetchImplementation(
           path.startsWith("/")
-            ? buildBitbucketRequest(path, credentials)
-            : buildBitbucketRequestForUrl(path, credentials),
+            ? buildBitbucketRequest(path, credentials, { signal })
+            : buildBitbucketRequestForUrl(path, credentials, { signal }),
         ),
       catch: () =>
         ({
@@ -133,6 +154,7 @@ const repositoryPath = (repository: RepositoryRef): string =>
 export const makeBitbucketClient = (
   credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation = (request) => fetch(request),
+  options: BitbucketClientOptions = {},
 ): CodeReviewProvider => {
   const getCurrentUser: Effect.Effect<ProviderUser, ProviderError> = requestJson(
     "/user",
@@ -140,7 +162,58 @@ export const makeBitbucketClient = (
     "/user",
     credentials,
     fetchImplementation,
+    options.signal,
   ).pipe(Effect.flatMap(decodeUser));
+
+  const discoverRepositories = (): Effect.Effect<RepositoryDiscoveryResult, ProviderError> =>
+    Effect.gen(function* () {
+      const workspaceSlugs = yield* collectPages(
+        "workspace discovery",
+        "/user/workspaces?pagelen=1",
+        "/user/workspaces",
+        (path) =>
+          requestJson(
+            path,
+            "workspace discovery",
+            "/user/workspaces",
+            credentials,
+            fetchImplementation,
+            options.signal,
+          ).pipe(Effect.flatMap(decodeWorkspacePage)),
+      );
+      const workspaces = [...workspaceSlugs].sort();
+      const repositories: RepositoryRef[] = [];
+      const failures: RepositoryDiscoveryResult["failures"][number][] = [];
+      for (const workspace of workspaces) {
+        const pageResult = yield* Effect.either(
+          collectPages(
+            "repository discovery",
+            `/repositories/${encodeURIComponent(workspace)}?pagelen=1`,
+            `/repositories/${encodeURIComponent(workspace)}`,
+            (path) =>
+              requestJson(
+                path,
+                "repository discovery",
+                "/repositories/{workspace}",
+                credentials,
+                fetchImplementation,
+                options.signal,
+              ).pipe(Effect.flatMap(decodeRepositoryPage)),
+          ),
+        );
+        if (pageResult._tag === "Left") {
+          failures.push({ errorTag: pageResult.left._tag });
+          continue;
+        }
+        repositories.push(...pageResult.right.map((slug) => ({ workspace, slug })));
+      }
+      repositories.sort((left, right) =>
+        `${left.workspace}\u0000${left.slug}`.localeCompare(
+          `${right.workspace}\u0000${right.slug}`,
+        ),
+      );
+      return { workspaces, repositories, failures };
+    });
 
   const listOpenPullRequests = (
     repository: RepositoryRef,
@@ -156,6 +229,7 @@ export const makeBitbucketClient = (
           "/repositories/{workspace}/{repository}/pullrequests",
           credentials,
           fetchImplementation,
+          options.signal,
         ).pipe(Effect.flatMap(decodePullRequestPage));
       },
     ).pipe(Effect.map((values) => values.map((value) => mapPullRequest(value, repository))));
@@ -174,6 +248,7 @@ export const makeBitbucketClient = (
           "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/activity",
           credentials,
           fetchImplementation,
+          options.signal,
         ).pipe(Effect.flatMap(decodeActivityPage));
       },
     );
@@ -186,6 +261,7 @@ export const makeBitbucketClient = (
       canWriteReviews: false,
     },
     getCurrentUser,
+    discoverRepositories,
     listOpenPullRequests,
     getReviewSignals,
   };

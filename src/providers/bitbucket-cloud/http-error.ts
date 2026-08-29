@@ -52,14 +52,16 @@ export const mapBitbucketHttpError = (
     };
   }
   if (status === 429) {
-    const parsed = retryAfter === null ? undefined : Number.parseInt(retryAfter, 10);
+    const parsed = retryAfter !== null && /^\d+$/.test(retryAfter) ? Number(retryAfter) : undefined;
     return {
       _tag: "RateLimited",
       message: "Provider rate limit was reached",
       operation,
       endpoint,
       status,
-      ...(parsed !== undefined && Number.isFinite(parsed) ? { retryAfterSeconds: parsed } : {}),
+      ...(parsed !== undefined && Number.isSafeInteger(parsed)
+        ? { retryAfterSeconds: parsed }
+        : {}),
     };
   }
   if (status >= 500) {

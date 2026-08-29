@@ -43,6 +43,10 @@ not turn the Phase 0 synthetic fixtures into live evidence.
       the local report. Record only the endpoint templates
       `/2.0/user/workspaces?pagelen=1` and
       `/2.0/repositories/{workspace}?pagelen=1`; never retain either slug.
+- [ ] Allow discovery to follow every returned opaque `next` link. If one
+      workspace's repository pages fail, confirm successful repositories remain
+      available and repository visibility is shown as partial rather than
+      complete; record only the redacted category.
 - [ ] Confirm diagnostics reports only the capability status/error category,
       not response bodies, source, comments, repository names, PR titles, or
       credential material.

@@ -26,6 +26,16 @@ export interface RepositoryRef {
   readonly slug: string;
 }
 
+export interface RepositoryDiscoveryFailure {
+  readonly errorTag: ProviderError["_tag"];
+}
+
+export interface RepositoryDiscoveryResult {
+  readonly workspaces: ReadonlyArray<string>;
+  readonly repositories: ReadonlyArray<RepositoryRef>;
+  readonly failures: ReadonlyArray<RepositoryDiscoveryFailure>;
+}
+
 export interface PullRequestRef {
   readonly repository: RepositoryRef;
   readonly id: number;
@@ -67,6 +77,7 @@ export interface CodeReviewProvider {
   readonly id: ProviderId;
   readonly capabilities: ProviderCapabilities;
   readonly getCurrentUser: Effect.Effect<ProviderUser, ProviderError>;
+  readonly discoverRepositories: () => Effect.Effect<RepositoryDiscoveryResult, ProviderError>;
   readonly listOpenPullRequests: (
     repository: RepositoryRef,
   ) => Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError>;

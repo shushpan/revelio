@@ -48,6 +48,66 @@ const successfulFetcher = vi.fn(async (request: Request) => {
 });
 
 describe("Bitbucket diagnostics workflow", () => {
+  it("runs full opaque discovery, retains partial results, and probes only the first normalized repository", async () => {
+    const workspaceNext = "https://api.bitbucket.org/2.0/user/workspaces?cursor=workspace-opaque";
+    const repositoryNext =
+      "https://api.bitbucket.org/2.0/repositories/acme?cursor=repository-opaque";
+    const paths: string[] = [];
+    const fetcher = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      const path = `${url.pathname}${url.search}`;
+      paths.push(path);
+      if (path === "/2.0/user") return response(diagnosticFixtures.user);
+      if (path === "/2.0/user/workspaces?pagelen=1")
+        return response({ values: [{ slug: "zeta" }], next: workspaceNext });
+      if (path === new URL(workspaceNext).pathname + new URL(workspaceNext).search)
+        return response({ values: [{ slug: "acme" }] });
+      if (path === "/2.0/repositories/acme?pagelen=1")
+        return response({ values: [{ slug: "z-repo" }], next: repositoryNext });
+      if (path === new URL(repositoryNext).pathname + new URL(repositoryNext).search)
+        return response({ values: [{ slug: "a-repo" }] });
+      if (path === "/2.0/repositories/zeta?pagelen=1") return response({ secret: "partial" }, 403);
+      if (path === "/2.0/repositories/acme/a-repo/pullrequests?state=OPEN&pagelen=1")
+        return response(diagnosticFixtures.pullRequests);
+      if (path.endsWith("/activity?pagelen=1")) return response(diagnosticFixtures.activity);
+      if (path.endsWith("/comments?pagelen=1")) return response(diagnosticFixtures.comments);
+      if (path.endsWith("/diffstat?pagelen=1")) return response(diagnosticFixtures.diffstat);
+      if (path.endsWith("/diff")) return response(diagnosticFixtures.diff);
+      throw new Error(`unexpected fixture path: ${path}`);
+    });
+
+    const result = await Effect.runPromise(
+      runBitbucketDiagnostics(credentials, { fetch: fetcher }),
+    );
+
+    expect(result.state).toBe("failed");
+    expect(result.capabilities["workspace-visibility"]).toEqual({
+      capability: "workspace-visibility",
+      status: "succeeded",
+    });
+    expect(result.capabilities["repository-visibility"]).toEqual({
+      capability: "repository-visibility",
+      status: "failed",
+      errorTag: "PartialDiscovery",
+    });
+    expect(result.capabilities["open-pr-list"].status).toBe("succeeded");
+    expect(paths).toEqual([
+      "/2.0/user",
+      "/2.0/user/workspaces?pagelen=1",
+      new URL(workspaceNext).pathname + new URL(workspaceNext).search,
+      "/2.0/repositories/acme?pagelen=1",
+      new URL(repositoryNext).pathname + new URL(repositoryNext).search,
+      "/2.0/repositories/zeta?pagelen=1",
+      "/2.0/repositories/acme/a-repo/pullrequests?state=OPEN&pagelen=1",
+      "/2.0/repositories/acme/a-repo/pullrequests/7/activity?pagelen=1",
+      "/2.0/repositories/acme/a-repo/pullrequests/7/comments?pagelen=1",
+      "/2.0/repositories/acme/a-repo/pullrequests/7/diffstat?pagelen=1",
+      "/2.0/repositories/acme/a-repo/pullrequests/7/diff",
+    ]);
+    expect(JSON.stringify(result)).not.toContain("partial");
+    expect(JSON.stringify(result)).not.toContain("opaque");
+  });
+
   it("runs the eight read probes sequentially and returns only redacted capability results", async () => {
     const active = { value: 0, maximum: 0 };
     const fetcher = vi.fn(async (request: Request) => {

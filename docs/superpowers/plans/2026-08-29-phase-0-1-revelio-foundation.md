@@ -584,3 +584,21 @@ Recorded 2026-08-29 on local `main` at baseline `90c1aa3`.
   are negative assertions only, and finds no forbidden old identity, deprecated
   endpoint, or product theme matches. Credential wording remains local-only and
   sanitized.
+
+## Final review fix wave evidence
+
+The final review fix wave is implemented locally on `main` after the recorded
+baseline. The provider contract now exposes a narrow `discoverRepositories`
+operation whose result contains normalized workspace slugs, normalized
+`RepositoryRef` values, and per-workspace failure categories without slugs,
+URLs, cursors, credentials, or response bodies. Workspace and repository
+pages are fetched sequentially through the existing opaque-link origin and
+endpoint validation. Diagnostics consumes the full result, retains only the
+first normalized repository for its bounded downstream probes, and reports
+partial repository visibility honestly when retained repositories coexist with
+a workspace failure. No provider plugin registry, cache, retry scheduler, or
+new abstraction framework was introduced.
+
+The strict `Retry-After` parser and `Card.Header` composition changes are
+covered by focused tests. The user-run disposable-token validation remains
+explicitly pending; no live credentials or remote mutation were used.

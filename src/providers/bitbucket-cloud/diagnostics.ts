@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import type { BitbucketCredentials } from "./auth";
+import { makeBitbucketClient } from "./client";
 import { buildBitbucketRequest } from "./request";
 import {
   diagnosticCapabilities,
@@ -51,14 +52,6 @@ const firstPageValues = (
 ): ReadonlyArray<unknown> => {
   if (!isRecord(value) || !Array.isArray(value.values)) throw decodeError(operation, endpoint);
   return value.values;
-};
-
-const firstString = (value: unknown, keys: ReadonlyArray<string>): string | undefined => {
-  if (!isRecord(value)) return undefined;
-  for (const key of keys) {
-    if (typeof value[key] === "string" && value[key] !== "") return value[key];
-  }
-  return undefined;
 };
 
 const firstNumber = (value: unknown, keys: ReadonlyArray<string>): number | undefined => {
@@ -155,34 +148,6 @@ const listValues = (capability: DiagnosticCapability, operation: string) => (bod
 const repositoryPath = (workspace: string, repository: string): string =>
   `/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repository)}`;
 
-const firstWorkspace = (body: unknown): string | undefined => {
-  const value = firstPageValues(
-    body,
-    "workspace visibility",
-    endpointTemplates["workspace-visibility"],
-  )[0];
-  if (!value) return undefined;
-  const slug = firstString(value, ["slug"]);
-  if (!slug) throw new Error("workspace is unavailable");
-  return slug;
-};
-
-const firstRepository = (
-  body: unknown,
-  workspace: string,
-): { workspace: string; repository: string } | undefined => {
-  const value = firstPageValues(
-    body,
-    "repository visibility",
-    endpointTemplates["repository-visibility"],
-  )[0];
-  if (!value) return undefined;
-  if (!isRecord(value)) throw new Error("repository is unavailable");
-  const repository = firstString(value, ["slug"]);
-  if (!repository) throw new Error("repository is unavailable");
-  return { workspace, repository };
-};
-
 const firstPullRequest = (body: unknown): number | undefined => {
   const value = firstPageValues(
     body,
@@ -249,45 +214,19 @@ export const runBitbucketDiagnostics = (
 ): Effect.Effect<DiagnosticsReport, ProviderError> => {
   const fetchImplementation = options.fetch ?? ((request: Request) => fetch(request));
   const signal = options.signal;
+  const client = makeBitbucketClient(credentials, fetchImplementation, { signal });
 
   return Effect.gen(function* () {
     const results = {} as Record<
       DiagnosticCapability,
       DiagnosticsReport["capabilities"][DiagnosticCapability]
     >;
-    const identity = yield* probe(
-      runProbe(
-        "identity",
-        "/user",
-        "identity",
-        credentials,
-        fetchImplementation,
-        signal,
-        (body) => {
-          if (!isRecord(body) || typeof body.uuid !== "string")
-            throw new Error("identity unavailable");
-          return true;
-        },
-      ),
-      "identity",
-    );
+    const identity = yield* probe(client.getCurrentUser, "identity");
     results.identity = outcomeResult(identity);
 
-    const workspace = yield* probe(
-      runProbe(
-        "workspace-visibility",
-        "/user/workspaces?pagelen=1",
-        "workspace visibility",
-        credentials,
-        fetchImplementation,
-        signal,
-        firstWorkspace,
-      ),
-      "workspace-visibility",
-    );
-    results["workspace-visibility"] = outcomeResult(workspace);
-
-    if (workspace.result.status !== "succeeded" || !("value" in workspace && workspace.value)) {
+    const discovery = yield* probe(client.discoverRepositories(), "workspace-visibility");
+    if (discovery.result.status === "failed" || !("value" in discovery)) {
+      results["workspace-visibility"] = discovery.result;
       results["repository-visibility"] = unavailable("repository-visibility");
       results["open-pr-list"] = unavailable("open-pr-list");
       results.activity = unavailable("activity");
@@ -297,25 +236,35 @@ export const runBitbucketDiagnostics = (
       return reportFrom(results);
     }
 
-    const selectedWorkspace = workspace.value;
-    const repository = yield* probe(
-      runProbe(
-        "repository-visibility",
-        `/repositories/${encodeURIComponent(selectedWorkspace)}?pagelen=1`,
-        "repository visibility",
-        credentials,
-        fetchImplementation,
-        signal,
-        (body) => firstRepository(body, selectedWorkspace),
-      ),
-      "repository-visibility",
-    );
-    results["repository-visibility"] = outcomeResult(repository);
+    const discoveryResult = discovery.value;
+    if (discoveryResult.workspaces.length === 0) {
+      results["workspace-visibility"] = unavailable("workspace-visibility");
+      results["repository-visibility"] = unavailable("repository-visibility");
+      results["open-pr-list"] = unavailable("open-pr-list");
+      results.activity = unavailable("activity");
+      results.comments = unavailable("comments");
+      results.diffstat = unavailable("diffstat");
+      results.diff = unavailable("diff");
+      return reportFrom(results);
+    }
 
-    const selectedRepository =
-      repository.result.status === "succeeded" && "value" in repository
-        ? repository.value
-        : undefined;
+    results["workspace-visibility"] = {
+      capability: "workspace-visibility",
+      status: "succeeded",
+    };
+    const selectedRepository = discoveryResult.repositories[0];
+    results["repository-visibility"] =
+      discoveryResult.failures.length > 0
+        ? {
+            capability: "repository-visibility",
+            status: "failed",
+            errorTag: selectedRepository
+              ? "PartialDiscovery"
+              : (discoveryResult.failures[0]?.errorTag ?? "PartialDiscovery"),
+          }
+        : selectedRepository
+          ? { capability: "repository-visibility", status: "succeeded" }
+          : unavailable("repository-visibility");
 
     if (!selectedRepository) {
       results["open-pr-list"] = unavailable("open-pr-list");
@@ -326,10 +275,7 @@ export const runBitbucketDiagnostics = (
       return reportFrom(results);
     }
 
-    const repositoryBase = repositoryPath(
-      selectedRepository.workspace,
-      selectedRepository.repository,
-    );
+    const repositoryBase = repositoryPath(selectedRepository.workspace, selectedRepository.slug);
     const pullRequest = yield* probe(
       runProbe(
         "open-pr-list",

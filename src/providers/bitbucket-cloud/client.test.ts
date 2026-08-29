@@ -92,6 +92,69 @@ describe("Bitbucket read client", () => {
     ]);
   });
 
+  it("discovers every workspace and repository page in deterministic normalized order", async () => {
+    const requests: string[] = [];
+    const workspaceNext = "https://api.bitbucket.org/2.0/user/workspaces?cursor=workspace-opaque";
+    const repoNext = "https://api.bitbucket.org/2.0/repositories/acme?cursor=repo-opaque";
+    const fetcher = vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      if (request.url.endsWith("/user/workspaces?pagelen=1"))
+        return new Response(JSON.stringify({ values: [{ slug: "zeta" }], next: workspaceNext }), {
+          status: 200,
+        });
+      if (request.url === workspaceNext)
+        return new Response(JSON.stringify({ values: [{ slug: "acme" }] }), { status: 200 });
+      if (request.url.endsWith("/repositories/acme?pagelen=1"))
+        return new Response(JSON.stringify({ values: [{ slug: "z-repo" }], next: repoNext }), {
+          status: 200,
+        });
+      if (request.url === repoNext)
+        return new Response(JSON.stringify({ values: [{ slug: "a-repo" }] }), { status: 200 });
+      if (request.url.endsWith("/repositories/zeta?pagelen=1"))
+        return new Response(JSON.stringify({ values: [{ slug: "only-repo" }] }), { status: 200 });
+      throw new Error(`unexpected request: ${request.url}`);
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+
+    await expect(Effect.runPromise(client.discoverRepositories())).resolves.toEqual({
+      workspaces: ["acme", "zeta"],
+      repositories: [
+        { workspace: "acme", slug: "a-repo" },
+        { workspace: "acme", slug: "z-repo" },
+        { workspace: "zeta", slug: "only-repo" },
+      ],
+      failures: [],
+    });
+    expect(requests).toEqual([
+      "https://api.bitbucket.org/2.0/user/workspaces?pagelen=1",
+      workspaceNext,
+      "https://api.bitbucket.org/2.0/repositories/acme?pagelen=1",
+      repoNext,
+      "https://api.bitbucket.org/2.0/repositories/zeta?pagelen=1",
+    ]);
+  });
+
+  it("retains successful repositories and redacts a failed workspace result", async () => {
+    const fetcher = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/2.0/user/workspaces")
+        return new Response(JSON.stringify({ values: [{ slug: "good" }, { slug: "bad" }] }), {
+          status: 200,
+        });
+      if (url.pathname === "/2.0/repositories/good")
+        return new Response(JSON.stringify({ values: [{ slug: "review" }] }), { status: 200 });
+      if (url.pathname === "/2.0/repositories/bad")
+        return new Response("secret body", { status: 403 });
+      throw new Error(`unexpected request: ${request.url}`);
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+
+    const result = await Effect.runPromise(client.discoverRepositories());
+    expect(result.repositories).toEqual([{ workspace: "good", slug: "review" }]);
+    expect(result.failures).toEqual([{ errorTag: "Forbidden" }]);
+    expect(JSON.stringify(result)).not.toContain("secret body");
+  });
+
   it.each([
     [
       "foreign origin",

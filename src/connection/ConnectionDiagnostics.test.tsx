@@ -48,4 +48,10 @@ describe("Connection diagnostics", () => {
     setItem.mockRestore();
     fetch.mockRestore();
   });
+
+  it("composes the connection description inside the labelled card header", () => {
+    render(<ConnectionDiagnostics />);
+    const description = screen.getByText(/Use your Atlassian email/);
+    expect(description.closest(".connection-heading")).toBeInTheDocument();
+  });
 });

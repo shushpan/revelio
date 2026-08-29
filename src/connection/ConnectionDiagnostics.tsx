@@ -81,15 +81,15 @@ export function ConnectionDiagnostics(): JSX.Element {
               <p className="eyebrow">Phase 0</p>
               <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
             </div>
+            <Card.Description className="connection-copy">
+              Use your Atlassian email and a Bitbucket API token to run read-only connection
+              diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
+              Phase 0.
+            </Card.Description>
             <Button variant="secondary" onPress={lock}>
               Lock
             </Button>
           </Card.Header>
-          <Card.Description className="connection-copy">
-            Use your Atlassian email and a Bitbucket API token to run read-only connection
-            diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
-            Phase 0.
-          </Card.Description>
           <Card.Content>
             <form onSubmit={run} className="connection-form">
               <TextField name="email" fullWidth>
@@ -152,6 +152,7 @@ const errorLabels: Record<DiagnosticErrorTag, string> = {
   DecodeError: "Invalid provider response",
   ServerError: "Provider server error",
   PaginationError: "Pagination error",
+  PartialDiscovery: "Partial repository discovery",
   Unavailable: "Unavailable",
 };
 

@@ -23,6 +23,7 @@ export type DiagnosticErrorTag =
   | "DecodeError"
   | "ServerError"
   | "PaginationError"
+  | "PartialDiscovery"
   | "Unavailable";
 
 export interface DiagnosticCapabilityResult {

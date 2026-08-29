@@ -96,6 +96,32 @@ export interface PullRequestPage {
   readonly next?: string;
 }
 
+const SlugDto = Schema.Struct({ slug: Schema.String.pipe(Schema.filter((value) => value !== "")) });
+
+export interface WorkspacePage {
+  readonly values: ReadonlyArray<string>;
+  readonly next?: string;
+}
+
+export const decodeWorkspacePage = (input: unknown): Effect.Effect<WorkspacePage, ProviderError> =>
+  decode(PageDto(SlugDto), input, decodeError("workspace discovery", "/user/workspaces")).pipe(
+    Effect.map((page) => ({ ...page, values: page.values.map((value) => value.slug) })),
+  );
+
+export interface RepositoryPage {
+  readonly values: ReadonlyArray<string>;
+  readonly next?: string;
+}
+
+export const decodeRepositoryPage = (
+  input: unknown,
+): Effect.Effect<RepositoryPage, ProviderError> =>
+  decode(
+    PageDto(SlugDto),
+    input,
+    decodeError("repository discovery", "/repositories/{workspace}"),
+  ).pipe(Effect.map((page) => ({ ...page, values: page.values.map((value) => value.slug) })));
+
 export const decodePullRequestPage = (
   input: unknown,
 ): Effect.Effect<PullRequestPage, ProviderError> =>

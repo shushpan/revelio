@@ -29,4 +29,19 @@ describe("Bitbucket HTTP error mapping", () => {
     expect(JSON.stringify(error)).not.toContain("synthetic response body");
     expect(JSON.stringify(error)).toContain("retryAfterSeconds");
   });
+
+  it.each(["17junk", "1.5", "+17", "-1", "", " 17", "17 ", "999999999999999999999999999999999999"])(
+    "rejects non-strict Retry-After value %j",
+    (retryAfter) => {
+      expect(
+        mapBitbucketHttpError(429, "repository discovery", "/repositories/{workspace}", retryAfter),
+      ).not.toHaveProperty("retryAfterSeconds");
+    },
+  );
+
+  it("accepts a complete non-negative safe integer Retry-After value", () => {
+    expect(
+      mapBitbucketHttpError(429, "repository discovery", "/repositories/{workspace}", "017"),
+    ).toMatchObject({ retryAfterSeconds: 17 });
+  });
 });

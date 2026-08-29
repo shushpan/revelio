@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 Branch: `main`
-Verification parent: `90c1aa3`
+Verification parent: `25a4df4` (final-fix wave baseline)
 Application version: `0.1.0`
 
 ## Decision summary
@@ -40,9 +40,9 @@ the task plan's completion criteria.
 | P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts` asserts the fixed origin, GET-only shape, and `Request.cache === "no-store"` for authenticated requests; auto fixture `e2e/fixtures.ts` rejects every request origin except the local server and `https://api.bitbucket.org`; diagnostics E2E asserts fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header and browser cache-mode checks remain manual |
 | P0-02 | Basic authorization is formed from in-memory email/token and is not logged | `src/providers/bitbucket-cloud/auth.test.ts`; connection component tests; E2E checks no token in DOM | Enter only a disposable credential locally and inspect sanitized DevTools metadata, never headers | Proven locally for synthetic values; real-token CORS is unresolved |
 | P0-03 | API origin cannot be overridden by arbitrary input | Request-builder tests reject absolute/foreign paths and mutation-shaped options | None beyond release review of the fixed-origin source | Proven locally |
-| P0-04 | Read adapter validates identity, supported workspace-first discovery, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts`, and `diagnostics.test.ts` (synthetic fixtures) | Observe a disposable workspace and repository only after live CORS/scopes pass | Proven locally; disposable-token confirmation pending |
-| P0-05 | Pagination follows opaque returned links within the adapter's bounded safe behavior | `src/providers/bitbucket-cloud/client.test.ts` separately covers opaque query/cursor preservation, exact endpoint/origin validation, repeated links, and the 100-page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
-| P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases; discovery paths are `/2.0/user/workspaces?pagelen=1` then `/2.0/repositories/{workspace}?pagelen=1` | Run the local form with a disposable credential and confirm at least one workspace and repository while recording only capability outcomes and HTTP status classes | Proven locally; disposable-token confirmation pending |
+| P0-04 | Read adapter validates identity, discovers every accessible workspace and repository through normalized refs, preserves successful workspaces across redacted per-workspace failures, and validates pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts`, and `diagnostics.test.ts` (synthetic fixtures) | Observe a disposable workspace and repository only after live CORS/scopes pass | Proven locally; disposable-token confirmation pending |
+| P0-05 | Workspace and repository discovery follow every opaque returned link within the adapter's bounded safe behavior | `src/providers/bitbucket-cloud/client.test.ts` covers multi-page workspace/repository discovery, opaque query/cursor preservation, exact endpoint/origin validation, repeated links, and the 100-page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
+| P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately; repository visibility is partial when discovery retains repositories alongside a workspace failure | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases; full discovery follows `/2.0/user/workspaces?pagelen=1` then every `/2.0/repositories/{workspace}?pagelen=1` page | Run the local form with a disposable credential and confirm at least one workspace and repository while recording only capability outcomes and HTTP status classes | Proven locally; disposable-token confirmation pending |
 | P0-07 | Auth, permission, network/CORS, rate-limit, and decode diagnostics are distinct and redacted; client pagination failures are redacted | `src/providers/bitbucket-cloud/diagnostics.test.ts` covers 401/403/429/network/decode and redaction; `src/providers/bitbucket-cloud/client.test.ts` covers client pagination errors, second-page endpoint redaction, and redaction; component/E2E invalid-token, missing-scope, and cancellation flows cover UI handling. Diagnostics HTTP 500 and diagnostics-pagination are not exercised or claimed here. | Confirm only status class/capability result is retained in any live note | Proven locally for exercised classes; live CORS classification unresolved |
 | P0-08 | Credentials clear on Lock/reload and no Phase 0 persistence exists | `ConnectionDiagnostics.test.tsx`; E2E Lock/reload flow; source inspection finds no storage integration | Repeat with a disposable credential, then close/reload the tab | Proven locally |
 | P0-09 | Read probes are sequential, cancellable, and limited to expected endpoint templates | Diagnostics tests assert order, abort behavior, and endpoint templates; E2E rejects unexpected paths | Observe the browser Network panel only long enough to record an allowlisted status class | Proven locally |
@@ -63,7 +63,7 @@ the task plan's completion criteria.
 | P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
 | P0-26 | Phase 0 keeps credentials in memory and defers encrypted persistence | Component/E2E reload/Lock tests; no vault or persistence module exists | None; confirm the local build does not offer a persistence mode | Proven locally |
-| P0-27 | Missing scopes and partial read failures do not expose payloads or falsely claim completion | Synthetic 401/403 and unavailable diagnostics tests; no inbox completion UI exists | Validate later inbox behavior when implemented; do not infer it here | Proven locally for diagnostics; inbox behavior deferred |
+| P0-27 | Missing scopes and partial read failures do not expose payloads or falsely claim completion | Synthetic 401/403, partial-discovery, and unavailable diagnostics tests; no inbox completion UI exists | Validate later inbox behavior when implemented; do not infer it here | Proven locally for diagnostics; inbox behavior deferred |
 | P0-28 | No real approving, Request changes, comment, or other mutation endpoint is called in Phase 0 | No mutation client method; E2E allows only expected GET paths; shape tests have no fetch path | Review network panel during the probe; stop if a POST appears unexpectedly | Proven locally |
 | P0-29 | Comparisons and activity watermarks support a future since-last-review view | No comparison/checkpoint implementation exists in Phase 0; adapter activity is read-only normalization | Observe comparison and activity watermark fields on a disposable PR before implementing them | **Unresolved live gate** |
 | P0-30 | WebAuthn PRF and Argon2id choices work across supported browsers | No vault or KDF implementation is included in Phase 0; persistence is explicitly deferred | Run browser capability checks with non-secret test material in a secure-vault probe | **Unresolved live/browser gate** |
@@ -98,7 +98,7 @@ approved local environment elevation.
 - Biome format: 55 files checked, clean.
 - Biome lint: 56 files checked, clean.
 - TypeScript project build: passed.
-- Vitest: 14 files, 74 tests passed.
+- Vitest: 14 files, 87 tests passed.
 - Production Vite build and explicit bundle budget: passed (276,959 initial
   bytes / 350,000; 790,000 largest lazy chunk / 820,000).
 - Playwright against the production preview: 9 Chromium tests passed, 0
@@ -194,7 +194,7 @@ RED: before this fix, each second-page failure serialized the full opaque URL
 including its cursor and concrete repository identifiers.
 
 GREEN: the focused client suite and final verification pass with 14 Vitest
-files/74 tests; no real credentials, live calls, or mutations were used.
+files/87 tests; no real credentials, live calls, or mutations were used.
 
 The final Task 4 range is intentionally reviewed from local `main`. The
 closeout report records the exact changed paths and commit after staging; no
@@ -207,3 +207,19 @@ claim first real-world Bitbucket use until the unresolved live/browser gates in
 P0-11 through P0-18, P0-29, and P0-30 are run safely and documented under the
 allowlist below. A passing synthetic Playwright route is not a substitute for
 those observations.
+
+## Final review fix wave
+
+The final review adds the provider-boundary `discoverRepositories` operation.
+It follows all opaque workspace and repository pagination links sequentially,
+returns sorted normalized workspace slugs and repository refs, and retains
+successful repositories when another workspace fails. Failure entries contain
+only a redacted error category; diagnostics never serializes the discovery
+result and marks repository visibility as partial when retained refs are
+available alongside a failure. Strict `Retry-After` parsing accepts only a
+complete non-negative decimal string that converts to a safe integer. The
+connection copy is composed inside `Card.Header` while retaining its labelled
+connection section.
+
+The disposable-token live check remains pending and is not represented as
+automated evidence.
