@@ -406,7 +406,7 @@ Run:
 
 ```bash
 set -eu
-scan_forbidden() {
+fail_on_matches() {
   scan_label="$1"
   scan_pattern="$2"
   shift 2
@@ -417,35 +417,60 @@ scan_forbidden() {
   fi
   printf 'PASS: %s (no forbidden matches)\n' "$scan_label"
 }
-scan_forbidden "old product identity" 'Fast Review|fast-review' README.md src e2e index.html package.json docs/phase-0
-scan_forbidden "deprecated discovery paths" '(^|[^[:alnum:]_])/(workspaces\?|repositories\?role=member)' README.md src e2e index.html package.json docs/phase-0
-scan_forbidden "custom Diffs theme in product files" 'github-light' README.md src index.html package.json docs/phase-0
-scan_matches="$(rg -n 'github-light' e2e || true)"
-printf 'Allowed negative Diffs assertions:\n%s\n' "$scan_matches"
-scan_forbidden_matches="$(printf '%s\n' "$scan_matches" | rg -v 'not\.toContain\("github-light"\)' || true)"
-if [ -n "$scan_forbidden_matches" ]; then
-  printf 'FAIL: unexpected Diffs marker usage\n%s\n' "$scan_forbidden_matches" >&2
+
+printf '%s\n' 'Documentation validation:'
+fail_on_matches "old product identity in README/docs" 'Fast Review|fast-review' README.md docs/phase-0
+fail_on_matches "deprecated discovery paths in README/docs" '(^|[^[:alnum:]_])/(workspaces\?|repositories\?role=member)' README.md docs/phase-0
+doc_matches="$(rg -n '/2\.0/user/workspaces(\?pagelen=1)?|/2\.0/repositories/\{workspace\}(\?pagelen=1)?' README.md docs/phase-0 --glob '*.md' || true)"
+doc_unexpected_files="$(printf '%s\n' "$doc_matches" | cut -d: -f1 | sort -u | rg -v '^(README\.md|docs/phase-0/(live-bitbucket-checklist|acceptance-report)\.md)$' || true)"
+if [ -n "$doc_unexpected_files" ]; then
+  printf 'FAIL: supported discovery appears in unexpected documentation files\n%s\n' "$doc_unexpected_files" >&2
   exit 1
 fi
-printf 'PASS: E2E marker matches are negative assertions only\n'
-scan_matches="$(rg -n '/2\.0/user/workspaces\?pagelen=1|/2\.0/repositories/\{workspace\}\?pagelen=1' README.md docs/phase-0 e2e src || true)"
-if [ -z "$scan_matches" ]; then
-  printf 'FAIL: supported discovery references are missing\n' >&2
+if [ -z "$doc_matches" ]; then
+  printf 'FAIL: supported discovery documentation references are missing\n' >&2
   exit 1
 fi
-printf 'PASS: supported discovery references present:\n%s\n' "$scan_matches"
+printf 'PASS: supported discovery documentation is scoped to README/live-check/acceptance\n%s\n' "$doc_matches"
+
+printf '%s\n' 'Runtime/test validation:'
+fail_on_matches "deprecated discovery paths in source/tests" '(^|[^[:alnum:]_])/(workspaces\?|repositories\?role=member)' src e2e
+source_templates="$(rg -n -F '"/user/workspaces"' src/providers/bitbucket-cloud/diagnostics.ts; rg -n -F '"/repositories/{workspace}"' src/providers/bitbucket-cloud/diagnostics.ts || true)"
+if [ -z "$source_templates" ]; then
+  printf 'FAIL: relative supported discovery templates are missing from diagnostics source\n' >&2
+  exit 1
+fi
+printf 'PASS: diagnostics source uses the supported relative templates\n%s\n' "$source_templates"
+fixture_paths="$(rg -n -F '/2.0/user/workspaces?pagelen=1' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts; rg -n -F '/2.0/repositories/acme?pagelen=1' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts || true)"
+if [ -z "$fixture_paths" ]; then
+  printf 'FAIL: exact supported fixture paths are missing from source/tests\n' >&2
+  exit 1
+fi
+printf 'PASS: source/tests use exact supported fixture paths\n%s\n' "$fixture_paths"
+
+fail_on_matches "custom Diffs theme in product files" 'github-light' README.md src index.html package.json docs/phase-0
+e2e_diff_matches="$(rg -n -F 'github-light' e2e || true)"
+e2e_unexpected_matches="$(printf '%s\n' "$e2e_diff_matches" | rg -v -F 'not.toContain("github-light")' || true)"
+if [ -n "$e2e_unexpected_matches" ]; then
+  printf 'FAIL: unexpected E2E Diffs marker usage\n%s\n' "$e2e_unexpected_matches" >&2
+  exit 1
+fi
+printf 'PASS: E2E Diffs marker matches are exact negative assertions\n%s\n' "$e2e_diff_matches"
+
 rg -n "real token|API token" README.md docs/phase-0/live-bitbucket-checklist.md
 git diff --check
 ```
 
-Expected: the script exits zero. It fails on old product identity, deprecated
-`/workspaces?` or `/repositories?role=member` paths, or custom Diffs theme use
-in product files. Supported `/2.0/user/workspaces?pagelen=1` and
-`/2.0/repositories/{workspace}?pagelen=1` references are required and reported
-as allowed. Existing E2E `github-light` matches are allowed only when they are
-negative `not.toContain("github-light")` assertions. Token mentions only
-instruct users to enter credentials in the local browser and never expose them
-elsewhere; `git diff --check` exits zero.
+Expected: the script exits zero. Documentation validation requires supported
+templated discovery references only in `README.md`,
+`docs/phase-0/live-bitbucket-checklist.md`, and
+`docs/phase-0/acceptance-report.md`; it fails on old product identity or
+deprecated paths there. Runtime/test validation separately requires the exact
+relative diagnostics templates and `/2.0/...` fixture paths, and fails on any
+deprecated path. Product files contain no `github-light`; E2E occurrences are
+allowed only as exact negative `not.toContain("github-light")` assertions.
+Token mentions only instruct users to enter credentials in the local browser
+and never expose them elsewhere; `git diff --check` exits zero.
 
 - [x] **Step 4: Run the complete verification contract**
 
@@ -495,8 +520,9 @@ Recorded 2026-08-29 on local `main` at baseline `90c1aa3`.
   viewport and `390x844`; light, dark/system controls, connection labels,
   Lock, diagnostics idle state, lazy diff loading, Unified/Split, and changed
   file navigation were visible and interactive. No credentials were entered.
-- Identity scan: the revised command exits `0`, reports supported discovery
-  references as allowed, confirms E2E `github-light` matches are negative
-  assertions only, and finds no forbidden old identity, deprecated endpoint,
-  or product theme matches. Credential wording remains local-only and
+- Identity scan: the revised scoped command exits `0`, confines templated
+  discovery references to the intended README/Phase 0 documents, validates
+  source/test current paths independently, confirms E2E `github-light` matches
+  are negative assertions only, and finds no forbidden old identity, deprecated
+  endpoint, or product theme matches. Credential wording remains local-only and
   sanitized.
