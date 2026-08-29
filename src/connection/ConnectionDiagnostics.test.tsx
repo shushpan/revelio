@@ -6,6 +6,7 @@ describe("Connection diagnostics", () => {
   afterEach(() => cleanup());
   it("keeps credentials in controlled memory fields and clears them on Lock", () => {
     render(<ConnectionDiagnostics />);
+    expect(screen.getByRole("region", { name: "Connect to Bitbucket Cloud" })).toBeInTheDocument();
     const email = screen.getByLabelText("Atlassian email");
     const token = screen.getByLabelText("Bitbucket API token");
     fireEvent.change(email, { target: { value: "reviewer@example.test" } });

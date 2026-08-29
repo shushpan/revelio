@@ -3,9 +3,13 @@ import { useTheme } from "@heroui/react";
 import { Button } from "@heroui/react/button";
 import type { JSX } from "react";
 import { lazy, Suspense, useState } from "react";
-import { ConnectionDiagnostics } from "../connection/ConnectionDiagnostics";
 import { type ThemeChoice, ThemeControl } from "../ui/ThemeControl";
 
+const ConnectionDiagnostics = lazy(() =>
+  import("../connection/ConnectionDiagnostics").then(({ ConnectionDiagnostics: diagnostics }) => ({
+    default: diagnostics,
+  })),
+);
 const DiffDemo = lazy(() =>
   import("../review/DiffDemo").then(({ DiffDemo: demo }) => ({ default: demo })),
 );
@@ -26,7 +30,15 @@ export function App(): JSX.Element {
         </div>
         <ThemeControl theme={selectedTheme} resolvedTheme={diffTheme} onThemeChange={setTheme} />
       </header>
-      <ConnectionDiagnostics />
+      <Suspense
+        fallback={
+          <p className="app-shell review-status" role="status">
+            Loading connection diagnostics…
+          </p>
+        }
+      >
+        <ConnectionDiagnostics />
+      </Suspense>
       <div className="app-shell review-shell">
         {isDiffDemoOpen ? (
           <Suspense

@@ -74,52 +74,56 @@ export function ConnectionDiagnostics(): JSX.Element {
 
   return (
     <main className="app-shell connection-page">
-      <Card className="connection-card" aria-labelledby="connection-title">
-        <Card.Header className="connection-heading">
-          <div>
-            <p className="eyebrow">Phase 0</p>
-            <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
-          </div>
-          <Button variant="secondary" onPress={lock}>
-            Lock
-          </Button>
-        </Card.Header>
-        <Card.Description className="connection-copy">
-          Use your Atlassian email and a Bitbucket API token to run read-only connection
-          diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
-          Phase 0.
-        </Card.Description>
-        <Card.Content>
-          <form onSubmit={run} className="connection-form">
-            <TextField name="email" fullWidth>
-              <Label>Atlassian email</Label>
-              <Input
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </TextField>
-            <TextField name="apiToken" fullWidth>
-              <Label>Bitbucket API token</Label>
-              <Input
-                type="password"
-                autoComplete="off"
-                value={apiToken}
-                onChange={(event) => setApiToken(event.target.value)}
-              />
-            </TextField>
-            <Button
-              type="submit"
-              variant="primary"
-              isDisabled={diagnostics.state === "running" || email.trim() === "" || apiToken === ""}
-            >
-              {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
+      <section aria-labelledby="connection-title">
+        <Card className="connection-card">
+          <Card.Header className="connection-heading">
+            <div>
+              <p className="eyebrow">Phase 0</p>
+              <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
+            </div>
+            <Button variant="secondary" onPress={lock}>
+              Lock
             </Button>
-          </form>
-          <DiagnosticsSummary diagnostics={diagnostics} />
-        </Card.Content>
-      </Card>
+          </Card.Header>
+          <Card.Description className="connection-copy">
+            Use your Atlassian email and a Bitbucket API token to run read-only connection
+            diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
+            Phase 0.
+          </Card.Description>
+          <Card.Content>
+            <form onSubmit={run} className="connection-form">
+              <TextField name="email" fullWidth>
+                <Label>Atlassian email</Label>
+                <Input
+                  type="email"
+                  autoComplete="off"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </TextField>
+              <TextField name="apiToken" fullWidth>
+                <Label>Bitbucket API token</Label>
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={apiToken}
+                  onChange={(event) => setApiToken(event.target.value)}
+                />
+              </TextField>
+              <Button
+                type="submit"
+                variant="primary"
+                isDisabled={
+                  diagnostics.state === "running" || email.trim() === "" || apiToken === ""
+                }
+              >
+                {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
+              </Button>
+            </form>
+            <DiagnosticsSummary diagnostics={diagnostics} />
+          </Card.Content>
+        </Card>
+      </section>
     </main>
   );
 }

@@ -52,3 +52,40 @@ Implemented one root HeroUI `useTheme("system")` controller in `App`, with resol
 ## Concerns
 
 The repository’s initial bundle budget is already over its configured limit on base `2bf92b9`; the build and normal E2E command therefore remain non-zero until that pre-existing budget issue is addressed. Task 3 preserves the measured initial size exactly while keeping the largest lazy chunk under its limit.
+
+## Fix round 1
+
+### Analysis
+
+The prior 417,602-byte entry was caused by eagerly importing the complete HeroUI diagnostics surface through `App`. A clean Vite build from base `2bf92b9` measured 318,520 bytes, while the Task 3 head measured 417,602 bytes. The diagnostics module is not needed to render the application header or diff-open affordance, so it is now loaded with React `lazy`/`Suspense` from `App`. The diff demo remains lazy as before.
+
+The prior connection card also carried the accessible label on a `div`, which did not expose the intended named region. A RED test now requires a native `<section aria-labelledby="connection-title">` wrapper, with the HeroUI `Card` nested inside it.
+
+### RED/GREEN
+
+Command:
+
+```text
+pnpm vitest run src/connection/ConnectionDiagnostics.test.tsx
+```
+
+Result: RED. The new semantic-region assertion could not find a named `region` because the Card was the labelled `div`.
+
+After adding the native section and lazy diagnostics boundary:
+
+```text
+pnpm vitest run src/connection/ConnectionDiagnostics.test.tsx src/app/App.test.tsx
+```
+
+Result: GREEN, 2 files / 4 tests.
+
+### Fix verification
+
+- `pnpm build` — PASS, initial `276959` / `350000`; largest lazy `emacs-lisp` `790000` / `820000`.
+- Clean base `2bf92b9` Vite + budget accounting — PASS, initial `318520` / `350000`; largest lazy `emacs-lisp` `790000` / `820000`.
+- `pnpm test:e2e -- e2e/smoke.spec.ts e2e/diff-review.spec.ts e2e/connection-diagnostics.spec.ts` — PASS, configured web server started and Chromium passed 9/9 tests.
+- Existing `.tldr/` and `.tldrignore` remain untouched and unstaged.
+
+### Fix concerns
+
+None. The initial bundle is now below the existing budget, the normal configured E2E gate passes, and the connection surface exposes the required native named section.
