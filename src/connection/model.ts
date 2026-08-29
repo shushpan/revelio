@@ -12,8 +12,12 @@ export const diagnosticCapabilities = [
 export type DiagnosticCapability = (typeof diagnosticCapabilities)[number];
 export type DiagnosticRunState = "idle" | "running" | "succeeded" | "failed";
 export type DiagnosticErrorTag =
+  | "BadRequest"
   | "Unauthorized"
   | "Forbidden"
+  | "NotFound"
+  | "Gone"
+  | "UnexpectedHttpError"
   | "NetworkError"
   | "RateLimited"
   | "DecodeError"

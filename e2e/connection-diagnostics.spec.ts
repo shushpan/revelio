@@ -23,8 +23,8 @@ const installReadOnlyBitbucketFixtures = async (
 ): Promise<() => ReadonlyArray<string>> => {
   const expectedPaths = [
     "/2.0/user",
-    "/2.0/workspaces?pagelen=1",
-    "/2.0/repositories?role=member&pagelen=1",
+    "/2.0/user/workspaces?pagelen=1",
+    "/2.0/repositories/acme?pagelen=1",
     "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1",
     "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1",
     "/2.0/repositories/acme/review/pullrequests/7/comments?pagelen=1",
@@ -42,11 +42,11 @@ const installReadOnlyBitbucketFixtures = async (
       await route.fulfill({ json: { uuid: "{user-uuid}", display_name: "Synthetic Reviewer" } });
       return;
     }
-    if (path === "/2.0/workspaces") {
+    if (path === "/2.0/user/workspaces") {
       await route.fulfill({ json: { values: [{ uuid: "{workspace-uuid}", slug: "acme" }] } });
       return;
     }
-    if (path === "/2.0/repositories") {
+    if (path === "/2.0/repositories/acme") {
       await route.fulfill({
         json: { values: [{ uuid: "{repo-uuid}", slug: "review", workspace: { slug: "acme" } }] },
       });
@@ -90,8 +90,8 @@ test("runs all read-only probes with synthetic intercepted responses", async ({ 
   ).toBeVisible();
   expect(observedPaths()).toEqual([
     "/2.0/user",
-    "/2.0/workspaces?pagelen=1",
-    "/2.0/repositories?role=member&pagelen=1",
+    "/2.0/user/workspaces?pagelen=1",
+    "/2.0/repositories/acme?pagelen=1",
     "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1",
     "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1",
     "/2.0/repositories/acme/review/pullrequests/7/comments?pagelen=1",
@@ -148,7 +148,7 @@ test.describe("missing-scope diagnostics", () => {
         await route.fulfill({ json: { uuid: "{user-uuid}", display_name: "Synthetic Reviewer" } });
         return;
       }
-      if (path === "/2.0/workspaces" || path === "/2.0/repositories") {
+      if (path === "/2.0/user/workspaces" || path === "/2.0/repositories/acme") {
         await route.fulfill({ status: 403, json: { secret: "synthetic response body" } });
         return;
       }
@@ -163,11 +163,33 @@ test.describe("missing-scope diagnostics", () => {
     ).toBeVisible();
     expect(observedPaths).toEqual([
       "/2.0/user",
-      "/2.0/workspaces?pagelen=1",
-      "/2.0/repositories?role=member&pagelen=1",
+      "/2.0/user/workspaces?pagelen=1",
+      "/2.0/repositories/acme?pagelen=1",
     ]);
     await expect(page.locator("body")).not.toContainText("synthetic response body");
     await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
+  });
+});
+
+test.describe("retired-endpoint diagnostics", () => {
+  test.use({ expectedApiErrorStatuses: [410] });
+
+  test("labels an HTTP 410 without exposing the response body", async ({ page }) => {
+    await page.route("https://api.bitbucket.org/**", async (route: Route) => {
+      assertReadOnlyRequest(route);
+      await route.fulfill({ status: 410, json: { secret: "retired response body" } });
+    });
+    await page.goto("/");
+    await fillCredentials(page);
+    await page.getByRole("button", { name: "Run diagnostics" }).click();
+    await expect(page.getByRole("heading", { name: "Diagnostics failed" })).toBeVisible();
+    await expect(
+      page
+        .locator(".result-failed")
+        .filter({ hasText: "Provider endpoint no longer available" })
+        .first(),
+    ).toBeVisible();
+    await expect(page.locator("body")).not.toContainText("retired response body");
   });
 });
 

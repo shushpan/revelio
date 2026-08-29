@@ -7,6 +7,7 @@ import {
   type DiagnosticsReport,
 } from "../../connection/model";
 import type { ProviderError } from "../errors";
+import { mapBitbucketHttpError } from "./http-error";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
 
@@ -17,8 +18,8 @@ export interface DiagnosticsOptions {
 
 const endpointTemplates = {
   identity: "/user",
-  "workspace-visibility": "/workspaces",
-  "repository-visibility": "/repositories",
+  "workspace-visibility": "/user/workspaces",
+  "repository-visibility": "/repositories/{workspace}",
   "open-pr-list": "/repositories/{workspace}/{repository}/pullrequests",
   activity: "/repositories/{workspace}/{repository}/pullrequests/{pullRequestId}/activity",
   comments: "/repositories/{workspace}/{repository}/pullrequests/{pullRequestId}/comments",
@@ -32,50 +33,6 @@ const networkError = (operation: string, endpoint: string): ProviderError => ({
   operation,
   endpoint,
 });
-
-const httpError = (
-  status: number,
-  operation: string,
-  endpoint: string,
-  retryAfter: string | null,
-): ProviderError => {
-  if (status === 401) {
-    return {
-      _tag: "Unauthorized",
-      message: "Provider rejected the credentials",
-      operation,
-      endpoint,
-      status,
-    };
-  }
-  if (status === 403) {
-    return {
-      _tag: "Forbidden",
-      message: "Provider denied the requested permission",
-      operation,
-      endpoint,
-      status,
-    };
-  }
-  if (status === 429) {
-    const parsed = retryAfter === null ? undefined : Number.parseInt(retryAfter, 10);
-    return {
-      _tag: "RateLimited",
-      message: "Provider rate limit was reached",
-      operation,
-      endpoint,
-      status,
-      ...(parsed !== undefined && Number.isFinite(parsed) ? { retryAfterSeconds: parsed } : {}),
-    };
-  }
-  return {
-    _tag: "ServerError",
-    message: "Provider returned a server error",
-    operation,
-    endpoint,
-    status,
-  };
-};
 
 const decodeError = (operation: string, endpoint: string): ProviderError => ({
   _tag: "DecodeError",
@@ -133,7 +90,12 @@ const request = <A>(
 
     if (!response.ok) {
       return yield* Effect.fail(
-        httpError(response.status, operation, endpoint, response.headers.get("Retry-After")),
+        mapBitbucketHttpError(
+          response.status,
+          operation,
+          endpoint,
+          response.headers.get("Retry-After"),
+        ),
       );
     }
 
@@ -205,7 +167,10 @@ const firstWorkspace = (body: unknown): string | undefined => {
   return slug;
 };
 
-const firstRepository = (body: unknown): { workspace: string; repository: string } | undefined => {
+const firstRepository = (
+  body: unknown,
+  workspace: string,
+): { workspace: string; repository: string } | undefined => {
   const value = firstPageValues(
     body,
     "repository visibility",
@@ -214,9 +179,7 @@ const firstRepository = (body: unknown): { workspace: string; repository: string
   if (!value) return undefined;
   if (!isRecord(value)) throw new Error("repository is unavailable");
   const repository = firstString(value, ["slug", "name"]);
-  const workspaceValue = isRecord(value.workspace) ? value.workspace : undefined;
-  const workspace = firstString(workspaceValue, ["slug", "username", "name"]);
-  if (!repository || !workspace) throw new Error("repository is unavailable");
+  if (!repository) throw new Error("repository is unavailable");
   return { workspace, repository };
 };
 
@@ -313,7 +276,7 @@ export const runBitbucketDiagnostics = (
     const workspace = yield* probe(
       runProbe(
         "workspace-visibility",
-        "/workspaces?pagelen=1",
+        "/user/workspaces?pagelen=1",
         "workspace visibility",
         credentials,
         fetchImplementation,
@@ -324,15 +287,26 @@ export const runBitbucketDiagnostics = (
     );
     results["workspace-visibility"] = outcomeResult(workspace);
 
+    if (workspace.result.status !== "succeeded" || !("value" in workspace && workspace.value)) {
+      results["repository-visibility"] = unavailable("repository-visibility");
+      results["open-pr-list"] = unavailable("open-pr-list");
+      results.activity = unavailable("activity");
+      results.comments = unavailable("comments");
+      results.diffstat = unavailable("diffstat");
+      results.diff = unavailable("diff");
+      return reportFrom(results);
+    }
+
+    const selectedWorkspace = workspace.value;
     const repository = yield* probe(
       runProbe(
         "repository-visibility",
-        "/repositories?role=member&pagelen=1",
+        `/repositories/${encodeURIComponent(selectedWorkspace)}?pagelen=1`,
         "repository visibility",
         credentials,
         fetchImplementation,
         signal,
-        firstRepository,
+        (body) => firstRepository(body, selectedWorkspace),
       ),
       "repository-visibility",
     );

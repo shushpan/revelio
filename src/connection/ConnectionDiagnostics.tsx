@@ -134,8 +134,12 @@ const unexpectedFailureReport = (): DiagnosticsReport => {
 };
 
 const errorLabels: Record<DiagnosticErrorTag, string> = {
+  BadRequest: "Invalid provider request",
   Unauthorized: "Unauthorized",
   Forbidden: "Forbidden",
+  NotFound: "Provider resource not found",
+  Gone: "Provider endpoint no longer available",
+  UnexpectedHttpError: "Unexpected provider response",
   NetworkError: "Network or CORS error",
   RateLimited: "Rate limited",
   DecodeError: "Invalid provider response",

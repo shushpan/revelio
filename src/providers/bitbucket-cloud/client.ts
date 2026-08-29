@@ -10,54 +10,11 @@ import type {
 import type { ProviderError } from "../errors";
 import { decodeError } from "../errors";
 import type { BitbucketCredentials } from "./auth";
+import { mapBitbucketHttpError } from "./http-error";
 import { buildBitbucketRequest, buildBitbucketRequestForUrl, BITBUCKET_API_BASE } from "./request";
 import { decodeActivityPage, decodePullRequestPage, decodeUser, mapPullRequest } from "./schemas";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
-
-const httpError = (
-  status: number,
-  operation: string,
-  endpoint: string,
-  retryAfter: string | null,
-): ProviderError => {
-  if (status === 401) {
-    return {
-      _tag: "Unauthorized",
-      message: "Provider rejected the credentials",
-      operation,
-      endpoint,
-      status,
-    };
-  }
-  if (status === 403) {
-    return {
-      _tag: "Forbidden",
-      message: "Provider denied the requested permission",
-      operation,
-      endpoint,
-      status,
-    };
-  }
-  if (status === 429) {
-    const parsed = retryAfter === null ? undefined : Number.parseInt(retryAfter, 10);
-    return {
-      _tag: "RateLimited",
-      message: "Provider rate limit was reached",
-      operation,
-      endpoint,
-      status,
-      ...(parsed !== undefined && Number.isFinite(parsed) ? { retryAfterSeconds: parsed } : {}),
-    };
-  }
-  return {
-    _tag: "ServerError",
-    message: "Provider returned a server error",
-    operation,
-    endpoint,
-    status,
-  };
-};
 
 const requestJson = (
   path: string,
@@ -85,7 +42,12 @@ const requestJson = (
 
     if (!response.ok) {
       return yield* Effect.fail(
-        httpError(response.status, operation, endpoint, response.headers.get("Retry-After")),
+        mapBitbucketHttpError(
+          response.status,
+          operation,
+          endpoint,
+          response.headers.get("Retry-After"),
+        ),
       );
     }
 

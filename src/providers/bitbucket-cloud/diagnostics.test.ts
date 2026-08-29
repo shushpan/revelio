@@ -29,15 +29,21 @@ const diagnosticFixtures = {
 };
 
 const successfulFetcher = vi.fn(async (request: Request) => {
-  const path = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const path = `${url.pathname}${url.search}`;
   if (path === "/2.0/user") return response(diagnosticFixtures.user);
-  if (path === "/2.0/workspaces") return response(diagnosticFixtures.workspaces);
-  if (path === "/2.0/repositories") return response(diagnosticFixtures.repositories);
-  if (path.endsWith("/pullrequests")) return response(diagnosticFixtures.pullRequests);
-  if (path.endsWith("/activity")) return response(diagnosticFixtures.activity);
-  if (path.endsWith("/comments")) return response(diagnosticFixtures.comments);
-  if (path.endsWith("/diffstat")) return response(diagnosticFixtures.diffstat);
-  if (path.endsWith("/diff")) return response(diagnosticFixtures.diff);
+  if (path === "/2.0/user/workspaces?pagelen=1") return response(diagnosticFixtures.workspaces);
+  if (path === "/2.0/repositories/acme?pagelen=1") return response(diagnosticFixtures.repositories);
+  if (path === "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1")
+    return response(diagnosticFixtures.pullRequests);
+  if (path === "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1")
+    return response(diagnosticFixtures.activity);
+  if (path === "/2.0/repositories/acme/review/pullrequests/7/comments?pagelen=1")
+    return response(diagnosticFixtures.comments);
+  if (path === "/2.0/repositories/acme/review/pullrequests/7/diffstat?pagelen=1")
+    return response(diagnosticFixtures.diffstat);
+  if (path === "/2.0/repositories/acme/review/pullrequests/7/diff")
+    return response(diagnosticFixtures.diff);
   throw new Error(`unexpected fixture path: ${path}`);
 });
 
@@ -71,6 +77,21 @@ describe("Bitbucket diagnostics workflow", () => {
     expect(Object.values(result.capabilities).every((entry) => entry.status === "succeeded")).toBe(
       true,
     );
+    expect(
+      fetcher.mock.calls.map(([request]) => {
+        const url = new URL(request.url);
+        return `${url.pathname}${url.search}`;
+      }),
+    ).toEqual([
+      "/2.0/user",
+      "/2.0/user/workspaces?pagelen=1",
+      "/2.0/repositories/acme?pagelen=1",
+      "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1",
+      "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1",
+      "/2.0/repositories/acme/review/pullrequests/7/comments?pagelen=1",
+      "/2.0/repositories/acme/review/pullrequests/7/diffstat?pagelen=1",
+      "/2.0/repositories/acme/review/pullrequests/7/diff",
+    ]);
     expect(JSON.stringify(result)).not.toContain("Synthetic");
     expect(JSON.stringify(result)).not.toContain("acme");
     expect(JSON.stringify(result)).not.toContain("reviewer@example.test");
@@ -145,8 +166,8 @@ describe("Bitbucket diagnostics workflow", () => {
     );
     expect(requestedPaths.slice(0, 4)).toEqual([
       "/2.0/user",
-      "/2.0/workspaces",
-      "/2.0/repositories",
+      "/2.0/user/workspaces",
+      "/2.0/repositories/acme",
       "/2.0/repositories/acme/review/pullrequests",
     ]);
     expect(result.state).toBe("failed");
@@ -162,8 +183,7 @@ describe("Bitbucket diagnostics workflow", () => {
     const fetcher = vi.fn(async (request: Request) => {
       const path = new URL(request.url).pathname;
       if (path === "/2.0/user") return response(diagnosticFixtures.user);
-      if (path === "/2.0/workspaces") return response({ values: [] });
-      if (path === "/2.0/repositories") return response({ values: [] });
+      if (path === "/2.0/user/workspaces") return response({ values: [] });
       throw new Error(`unexpected dependent request: ${path}`);
     });
 
@@ -171,6 +191,11 @@ describe("Bitbucket diagnostics workflow", () => {
       runBitbucketDiagnostics(credentials, { fetch: fetcher }),
     );
     expect(result.state).toBe("failed");
+    expect(result.capabilities["workspace-visibility"]).toEqual({
+      capability: "workspace-visibility",
+      status: "unavailable",
+      errorTag: "Unavailable",
+    });
     expect(result.capabilities["repository-visibility"]).toEqual({
       capability: "repository-visibility",
       status: "unavailable",
@@ -182,7 +207,37 @@ describe("Bitbucket diagnostics workflow", () => {
       errorTag: "Unavailable",
     });
     expect(result.capabilities.activity.status).toBe("unavailable");
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("percent-encodes a workspace slug before repository discovery", async () => {
+    const requestedPaths: string[] = [];
+    const fetcher = vi.fn(async (request: Request) => {
+      const url = new URL(request.url);
+      const path = `${url.pathname}${url.search}`;
+      requestedPaths.push(path);
+      if (path === "/2.0/user") return response(diagnosticFixtures.user);
+      if (path === "/2.0/user/workspaces?pagelen=1")
+        return response({ values: [{ slug: "acme cloud" }] });
+      if (path === "/2.0/repositories/acme%20cloud?pagelen=1")
+        return response({ values: [{ slug: "review" }] });
+      if (path === "/2.0/repositories/acme%20cloud/review/pullrequests?state=OPEN&pagelen=1")
+        return response(diagnosticFixtures.pullRequests);
+      if (path.endsWith("/activity?pagelen=1")) return response(diagnosticFixtures.activity);
+      if (path.endsWith("/comments?pagelen=1")) return response(diagnosticFixtures.comments);
+      if (path.endsWith("/diffstat?pagelen=1")) return response(diagnosticFixtures.diffstat);
+      if (path.endsWith("/diff")) return response(diagnosticFixtures.diff);
+      throw new Error(`unexpected fixture path: ${path}`);
+    });
+
+    await Effect.runPromise(runBitbucketDiagnostics(credentials, { fetch: fetcher }));
+
+    expect(requestedPaths.slice(0, 4)).toEqual([
+      "/2.0/user",
+      "/2.0/user/workspaces?pagelen=1",
+      "/2.0/repositories/acme%20cloud?pagelen=1",
+      "/2.0/repositories/acme%20cloud/review/pullrequests?state=OPEN&pagelen=1",
+    ]);
   });
 });
 

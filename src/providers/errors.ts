@@ -1,5 +1,12 @@
 export type ProviderError =
   | {
+      readonly _tag: "BadRequest";
+      readonly message: "Provider rejected the request";
+      readonly operation: string;
+      readonly endpoint?: string;
+      readonly status: 400;
+    }
+  | {
       readonly _tag: "Unauthorized";
       readonly message: "Provider rejected the credentials";
       readonly operation: string;
@@ -12,6 +19,20 @@ export type ProviderError =
       readonly operation: string;
       readonly endpoint?: string;
       readonly status: 403;
+    }
+  | {
+      readonly _tag: "NotFound";
+      readonly message: "Provider resource was not found";
+      readonly operation: string;
+      readonly endpoint?: string;
+      readonly status: 404;
+    }
+  | {
+      readonly _tag: "Gone";
+      readonly message: "Provider endpoint is no longer available";
+      readonly operation: string;
+      readonly endpoint?: string;
+      readonly status: 410;
     }
   | {
       readonly _tag: "RateLimited";
@@ -36,6 +57,13 @@ export type ProviderError =
   | {
       readonly _tag: "ServerError";
       readonly message: "Provider returned a server error";
+      readonly operation: string;
+      readonly endpoint?: string;
+      readonly status: number;
+    }
+  | {
+      readonly _tag: "UnexpectedHttpError";
+      readonly message: "Provider returned an unexpected HTTP error";
       readonly operation: string;
       readonly endpoint?: string;
       readonly status: number;
