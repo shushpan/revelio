@@ -461,13 +461,13 @@ if [ "$(rg -l -F 'repository-visibility' "$discovery_source" || true)" != "$disc
 fi
 printf 'PASS: repository discovery source contract and file scope\n%s\n%s\n' "$repository_source" "$repository_fetch"
 
-workspace_files="$(rg -l -e '/2\.0/user/workspaces(\?pagelen=1)?"' src e2e | sort -u || true)"
+workspace_files="$(rg -l -e '/2\.0/user/workspaces(\?[^\"]*)?"' src e2e | sort -u || true)"
 workspace_expected_files="$(printf '%s\n' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sort -u)"
 if [ "$workspace_files" != "$workspace_expected_files" ]; then
   printf 'FAIL: workspace discovery fixture file scope changed\n%s\n' "$workspace_files" >&2
   exit 1
 fi
-workspace_tokens="$(rg -o --no-filename '/2\.0/user/workspaces(\?pagelen=1)?"' src e2e | sed 's/"$//' | sort -u || true)"
+workspace_tokens="$(rg -o --no-filename '/2\.0/user/workspaces(\?[^\"]*)?"' src e2e | sed 's/"$//' | sort -u || true)"
 workspace_expected_tokens="$(printf '%s\n' /2.0/user/workspaces '/2.0/user/workspaces?pagelen=1' | sort -u)"
 if [ "$workspace_tokens" != "$workspace_expected_tokens" ]; then
   printf 'FAIL: workspace discovery fixture variants changed\n%s\n' "$workspace_tokens" >&2
@@ -475,19 +475,24 @@ if [ "$workspace_tokens" != "$workspace_expected_tokens" ]; then
 fi
 printf 'PASS: workspace discovery fixture scope and exact variants\n%s\n' "$workspace_tokens"
 
-repository_files="$(rg -l -e '/2\.0/repositories/[^/[:space:]"?]+(\?pagelen=1)?"' src e2e | sort -u || true)"
+repository_files="$(rg -l -e '/2\.0/repositories/[^/[:space:]"?]+(\?[^\"]*)?"' src e2e | sort -u || true)"
 repository_expected_files="$(printf '%s\n' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sort -u)"
 if [ "$repository_files" != "$repository_expected_files" ]; then
   printf 'FAIL: repository discovery fixture file scope changed\n%s\n' "$repository_files" >&2
   exit 1
 fi
-repository_tokens="$(rg -o --no-filename '/2\.0/repositories/[^/[:space:]"?]+(\?pagelen=1)?"' src e2e | sed 's/"$//' | sort -u || true)"
+repository_tokens="$(rg -o --no-filename '/2\.0/repositories/[^/[:space:]"?]+(\?[^\"]*)?"' src e2e | sed 's/"$//' | sort -u || true)"
 repository_expected_tokens="$(printf '%s\n' /2.0/repositories/acme '/2.0/repositories/acme?pagelen=1' '/2.0/repositories/acme%20cloud?pagelen=1' | sort -u)"
 if [ "$repository_tokens" != "$repository_expected_tokens" ]; then
   printf 'FAIL: repository discovery fixture variants changed\n%s\n' "$repository_tokens" >&2
   exit 1
 fi
 printf 'PASS: repository discovery fixture scope and exact variants\n%s\n' "$repository_tokens"
+
+synthetic_workspace="$(printf '%s\n' '"/2.0/user/workspaces?foo=bar"' | rg -o '/2\.0/user/workspaces(\?[^\"]*)?"')"
+synthetic_repository="$(printf '%s\n' '"/2.0/repositories/acme?foo=bar"' | rg -o '/2\.0/repositories/[^/[:space:]"?]+(\?[^\"]*)?"')"
+printf 'PASS: broad candidate capture sees synthetic unsupported workspace: %s\n' "$synthetic_workspace"
+printf 'PASS: broad candidate capture sees synthetic unsupported repository: %s\n' "$synthetic_repository"
 
 fail_on_matches "custom Diffs theme in product files" 'github-light' README.md src index.html package.json docs/phase-0
 e2e_diff_matches="$(rg -n -F 'github-light' e2e || true)"
@@ -512,12 +517,16 @@ deprecated paths there. Runtime/test validation separately requires workspace
 and repository discovery in the exact production/test files, checks the
 relative diagnostics templates and exact supported fixture variants (including
 the encoded workspace fixture), and fails on any deprecated path or unexpected
-file/variant. The quoted endpoint patterns require a closing quote, so longer
-pull-request paths cannot pass by prefix. Product files contain no
+file/variant. Fixture scans first capture every complete quoted candidate,
+including arbitrary query text, before comparing full tokens to the allowlists;
+the repository pattern requires a closing quote after one workspace segment,
+so longer pull-request paths cannot pass by prefix. Product files contain no
 `github-light`; the complete normalized
 E2E matching-line list must equal the two exact
 `expect(await page.locator(".diff-view").innerHTML()).not.toContain("github-light");`
-assertions.
+assertions. The script also proves its broad candidate patterns capture
+synthetic `?foo=bar` workspace and repository strings, so unsupported queries
+cannot disappear during scanning.
 Token mentions only instruct users to enter credentials in the local browser
 and never expose them elsewhere; `git diff --check` exits zero.
 
