@@ -70,7 +70,7 @@ export function ConnectionDiagnostics(): JSX.Element {
     <main className="app-shell connection-page">
       <header className="app-header">
         <p className="eyebrow">Personal review workspace</p>
-        <h1>Fast Review</h1>
+        <h1>Revelio</h1>
         <p className="phase-label">Phase 0 readiness</p>
       </header>
       <section className="connection-card" aria-labelledby="connection-title">
@@ -85,7 +85,7 @@ export function ConnectionDiagnostics(): JSX.Element {
         </div>
         <p className="connection-copy">
           Use your Atlassian email and a Bitbucket API token to run read-only connection
-          diagnostics. Nothing is uploaded to a Fast Review server, and credentials are not saved in
+          diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
           Phase 0.
         </p>
         <form onSubmit={run} className="connection-form">

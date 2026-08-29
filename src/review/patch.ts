@@ -26,7 +26,7 @@ export interface PreparedPatch {
 }
 
 export function preprocessPatch(patch: string): PreparedPatch {
-  const parsed = parsePatchFiles(patch, "fast-review", true);
+  const parsed = parsePatchFiles(patch, "revelio", true);
   const files = parsed.flatMap((part) => part.files);
   if (files.length === 0) {
     throw new Error("Patch contains no files");

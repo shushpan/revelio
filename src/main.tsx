@@ -5,7 +5,7 @@ import { App } from "./app/App";
 const root = document.getElementById("root");
 
 if (root === null) {
-  throw new Error("Fast Review root element is missing");
+  throw new Error("Revelio root element is missing");
 }
 
 createRoot(root).render(
