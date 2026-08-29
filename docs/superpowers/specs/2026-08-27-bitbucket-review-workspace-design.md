@@ -1,13 +1,16 @@
-# Bitbucket Review Workspace — Product and Architecture Design
+# Revelio — Product and Architecture Design
 
-**Status:** Approved design; awaiting written-spec review  
-**Date:** 2026-08-27  
-**Working title:** Bitbucket Review Workspace  
+**Status:** Approved architecture; 2026-08-29 product and UI constraints incorporated; awaiting checkpoint review
+
+**Date:** 2026-08-29
+
+**Product name:** Revelio
+
 **Product type:** Open-source, backend-free static web application
 
 ## 1. Executive summary
 
-Bitbucket Review Workspace is a personal review inbox and code-review surface for Bitbucket Cloud. It combines pull requests from many repositories into one trustworthy TODO list, explains why each pull request needs attention, and provides a full-page review experience centered on `@pierre/diffs`.
+Revelio is a personal review inbox and code-review surface for Bitbucket Cloud. It combines pull requests from many repositories into one trustworthy TODO list, explains why each pull request needs attention, and provides a full-page review experience centered on `@pierre/diffs`.
 
 The application has no product backend, account system, server-side storage, analytics, telemetry, AI calls, or runtime third-party code. The browser communicates directly with `api.bitbucket.org`. Users may open the public hosted version, serve the same static release internally, or run the supplied minimal container.
 
@@ -281,7 +284,7 @@ Default ordering is:
 
 Within a reason, oldest waits appear first.
 
-The visual direction is Paper + Ink: warm low-contrast surfaces, deep navy text, cobalt focus, compact rows, restrained accents, and system-aware light/dark themes.
+Revelio uses HeroUI's default light and dark themes without a custom product palette. Compactness comes from composition, spacing, and information hierarchy built with HeroUI primitives rather than from a separate theme or component system. The interface follows the system preference by default and allows an explicit light, dark, or system choice.
 
 ## 12. Search, filters, and saved rules
 
@@ -330,6 +333,8 @@ Opening an inbox entry always opens `Changes`.
 - Line selections map back to Bitbucket inline-comment anchors.
 - Wide screens default to split; narrow screens default to unified.
 - A manual override is remembered.
+- Diffs uses its native default themes: `pierre-light` and `pierre-dark`.
+- The Diffs theme follows Revelio's resolved light/dark mode; Revelio does not override the code palette.
 - Editing APIs are out of scope.
 - The experimental Diffs worker pool is enabled only if the Phase 2 compatibility/performance gate passes; built-in virtualization is the fallback.
 
@@ -420,14 +425,17 @@ At the target scale, a five-minute visible polling interval leaves room under Bi
 - Vite static production build.
 - Latest stable Effect release at implementation kickoff.
 - `@pierre/diffs/react` as the primary review renderer.
-- Plain CSS with design tokens and native accessible controls.
+- HeroUI v3 through `@heroui/react` and `@heroui/styles` as the only product component and theme system.
+- Tailwind CSS v4 only as HeroUI's required styling runtime and layout utility layer.
+- HeroUI's default light and dark themes; no custom palette in the initial product.
+- Native semantic HTML and narrowly scoped CSS only for layout glue or behavior for which HeroUI has no primitive.
 - IndexedDB through one small wrapper.
 - Web Crypto plus one bundled, reviewed Argon2id implementation.
 - Vitest for unit/module tests.
 - Playwright for browser acceptance tests.
 - pnpm with a frozen lockfile.
 
-The initial implementation does not add SSR, React Query, Redux, Zustand, a UI framework, an Effect React atom package, or a server runtime. Beta or unstable Effect APIs are not used without an explicit architecture update.
+The initial implementation does not add SSR, React Query, Redux, Zustand, a second UI framework, an Effect React atom package, or a server runtime. Existing Phase 0 bespoke presentation CSS is migrated to HeroUI rather than maintained as a parallel design system. Beta or unstable Effect APIs are not used without an explicit architecture update.
 
 ### 16.2 Modules
 
@@ -446,7 +454,7 @@ src/
     crypto/             WebAuthn PRF, Argon2id, HKDF, AES-GCM
     persistence/        IndexedDB vault, metadata cache, checkpoints
     workers/            CPU-heavy request/response jobs
-  ui/                   Shared accessible presentation components
+  ui/                   HeroUI composition and product-specific adapters
 ```
 
 Each module exposes one small public entry point. Code outside a module does not import that module's internal files.
@@ -616,6 +624,8 @@ The container contains only the static assets and security-header configuration.
 
 A service worker is deferred until the later PWA phase. When added, it caches only versioned application-shell assets, never Bitbucket requests, credentials, repository data, or review drafts.
 
+The canonical source repository is `https://github.com/shushpan/revelio`, and `main` is the integration and release branch. Released artifacts are built only from a reviewed, verified commit on `main`.
+
 ## 23. Performance targets
 
 - Cached inbox shell and rows appear without waiting for Bitbucket.
@@ -642,9 +652,21 @@ Performance claims are verified with deterministic large-repository and large-di
 
 This phase produces proven contracts and fixtures, not product UI beyond a disposable probe.
 
+### Phase 0.1 — Product identity and live discovery correction
+
+- Rename product copy, package metadata, and documentation to Revelio.
+- Make `https://github.com/shushpan/revelio` the canonical repository with all current work on `main`.
+- Replace deprecated global discovery with `GET /2.0/user/workspaces`, followed by `GET /2.0/repositories/{workspace}` for each accessible workspace.
+- Follow opaque pagination links and preserve successful workspace results when another workspace fails.
+- Distinguish malformed requests, missing resources, revoked/deprecated endpoints, provider failures, and rate limiting without exposing credentials or response bodies.
+- Migrate the application shell and product controls to HeroUI v3 default light/dark themes.
+- Use Diffs' native `pierre-light` and `pierre-dark` themes, synchronized with the application theme.
+- Update the product README with prerequisites, Corepack/pnpm setup, installation, local use, security boundaries, features, and current limitations.
+- Verify the corrected discovery contract with deterministic tests and a disposable-token live check run only by the user in their browser.
+
 ### Phase 1 — Secure connection and trustworthy inbox
 
-- Static application shell and module boundaries.
+- HeroUI application shell and module boundaries.
 - Credential modes and vault.
 - Repository discovery/exclusions.
 - Metadata persistence and TTL cache.
@@ -705,6 +727,7 @@ The product is ready for its first real-world trial when:
 10. Public hosting and self-hosting use the same identifiable static build.
 11. No credential or Bitbucket payload is sent to an origin other than Bitbucket.
 12. `pnpm verify` passes and provides reproducible evidence for all completed phase requirements.
+13. Product UI uses HeroUI as its sole component/theme system and Diffs uses the native Pierre light/dark themes.
 
 ## 26. Feasibility gates and fixed fallbacks
 
@@ -721,6 +744,8 @@ These are explicit gates rather than unresolved product decisions:
 ## 27. Primary references
 
 - [Bitbucket Cloud REST API and authentication](https://developer.atlassian.com/cloud/bitbucket/rest/)
+- [Bitbucket workspace discovery](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-workspaces/)
+- [Bitbucket repository discovery](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-repositories/)
 - [Bitbucket API token permissions](https://support.atlassian.com/bitbucket-cloud/docs/api-token-permissions/)
 - [Bitbucket pull-request endpoints](https://developer.atlassian.com/cloud/bitbucket/rest/api-group-pullrequests/)
 - [Bitbucket API request limits](https://support.atlassian.com/bitbucket-cloud/docs/api-request-limits/)
@@ -728,5 +753,6 @@ These are explicit gates rather than unresolved product decisions:
 - [Web Cryptography API](https://www.w3.org/TR/WebCryptoAPI/)
 - [OWASP Password Storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
 - [`@pierre/diffs` documentation](https://diffs.com/docs)
+- [HeroUI React quick start](https://heroui.com/docs/react/getting-started/quick-start)
+- [HeroUI theming](https://heroui.com/docs/react/getting-started/theming)
 - [Web worker performance guidance](https://web.dev/learn/performance/web-worker-overview)
-
