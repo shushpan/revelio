@@ -1,24 +1,24 @@
-# Phase 0 acceptance report
+# Revelio Phase 0.1 acceptance report
 
-Date: 2026-08-28
-Branch: `implementation/phase-0`
-Verification parent: `94cd8f1` (Task 4 fix-round parent, not this report's
-final commit)
-Immutable Task 5 evidence commit: `4e84fb0`
+Date: 2026-08-29
+Branch: `main`
+Verification parent: `90c1aa3`
 Application version: `0.1.0`
 
 ## Decision summary
 
-The deterministic local feasibility probe is complete. The contracts, fixed
-Bitbucket read boundary, redacted diagnostics flow, real `@pierre/diffs`
-surface, patch worker, and production Playwright harness have automated
-evidence. No real Bitbucket credential, repository, pull request, comment,
-diff, or mutating request was used.
+The deterministic local Revelio foundation is complete. The contracts, fixed
+Bitbucket read boundary, supported workspace-first discovery, redacted
+diagnostics flow, real `@pierre/diffs` surface, patch worker, HeroUI shell, and
+production Playwright harness have automated evidence. No real Bitbucket
+credential, repository, pull request, comment, diff, or mutating request was
+used.
 
 This report does not declare live Bitbucket behavior feasible from request
-shape, documentation, or intercepted fixtures. The live gates listed as
-**Unresolved** require a user-controlled run against a disposable pull
-request; the procedure is in
+shape, documentation, or intercepted fixtures. Supported workspace and
+repository discovery is implemented locally, but a disposable-token browser
+confirmation is still pending. The live gates listed as **Unresolved** require
+a user-controlled run against a disposable pull request; the procedure is in
 [live-bitbucket-checklist.md](live-bitbucket-checklist.md).
 
 ## Evidence legend
@@ -40,9 +40,9 @@ the task plan's completion criteria.
 | P0-01 | Static, backend-free app with direct Bitbucket API boundary | `src/providers/bitbucket-cloud/request.test.ts` asserts the fixed origin, GET-only shape, and `Request.cache === "no-store"` for authenticated requests; auto fixture `e2e/fixtures.ts` rejects every request origin except the local server and `https://api.bitbucket.org`; diagnostics E2E asserts fixed origin and GET-only requests; `pnpm build` | Inspect the served bundle's network panel and deployment configuration | Proven locally; deployment-header and browser cache-mode checks remain manual |
 | P0-02 | Basic authorization is formed from in-memory email/token and is not logged | `src/providers/bitbucket-cloud/auth.test.ts`; connection component tests; E2E checks no token in DOM | Enter only a disposable credential locally and inspect sanitized DevTools metadata, never headers | Proven locally for synthetic values; real-token CORS is unresolved |
 | P0-03 | API origin cannot be overridden by arbitrary input | Request-builder tests reject absolute/foreign paths and mutation-shaped options | None beyond release review of the fixed-origin source | Proven locally |
-| P0-04 | Read adapter validates identity, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts` (synthetic fixtures) | Observe a disposable repository only after live CORS/scopes pass | Proven locally; live schema compatibility remains a gate |
+| P0-04 | Read adapter validates identity, supported workspace-first discovery, pull-request pages, activity, timestamps, and unknown events | `src/providers/bitbucket-cloud/schemas.test.ts`, `client.test.ts`, and `diagnostics.test.ts` (synthetic fixtures) | Observe a disposable workspace and repository only after live CORS/scopes pass | Proven locally; disposable-token confirmation pending |
 | P0-05 | Pagination follows opaque returned links within the adapter's bounded safe behavior | `src/providers/bitbucket-cloud/client.test.ts` separately covers opaque query/cursor preservation, exact endpoint/origin validation, repeated links, and the 100-page ceiling | Check a disposable response with more than one page if needed | Proven locally; live pagination is not exercised |
-| P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases | Run the local form with a disposable credential and inspect only capability statuses | Proven locally; real required scopes unresolved |
+| P0-06 | Diagnostics reports identity, workspace, repository, open PR, activity, comments, diffstat, and diff separately | `src/providers/bitbucket-cloud/diagnostics.test.ts`; `e2e/connection-diagnostics.spec.ts` success and dependent-unavailable cases; discovery paths are `/2.0/user/workspaces?pagelen=1` then `/2.0/repositories/{workspace}?pagelen=1` | Run the local form with a disposable credential and confirm at least one workspace and repository while recording only capability outcomes and HTTP status classes | Proven locally; disposable-token confirmation pending |
 | P0-07 | Auth, permission, network/CORS, rate-limit, and decode diagnostics are distinct and redacted; client pagination failures are redacted | `src/providers/bitbucket-cloud/diagnostics.test.ts` covers 401/403/429/network/decode and redaction; `src/providers/bitbucket-cloud/client.test.ts` covers client pagination errors, second-page endpoint redaction, and redaction; component/E2E invalid-token, missing-scope, and cancellation flows cover UI handling. Diagnostics HTTP 500 and diagnostics-pagination are not exercised or claimed here. | Confirm only status class/capability result is retained in any live note | Proven locally for exercised classes; live CORS classification unresolved |
 | P0-08 | Credentials clear on Lock/reload and no Phase 0 persistence exists | `ConnectionDiagnostics.test.tsx`; E2E Lock/reload flow; source inspection finds no storage integration | Repeat with a disposable credential, then close/reload the tab | Proven locally |
 | P0-09 | Read probes are sequential, cancellable, and limited to expected endpoint templates | Diagnostics tests assert order, abort behavior, and endpoint templates; E2E rejects unexpected paths | Observe the browser Network panel only long enough to record an allowlisted status class | Proven locally |
@@ -58,8 +58,8 @@ the task plan's completion criteria.
 | P0-19 | `@pierre/diffs` public API can render a multi-file patch with stable local annotation intent | `DiffReview.test.tsx`, `e2e/diff-review.spec.ts`, ADR 0001; exact pinned version `1.3.6` | Open the production demo at a narrow and wide viewport and check readable diff layout | Proven locally |
 | P0-20 | Large patch preprocessing has a safe worker boundary with cancellation/fallback | `src/workers/patch-worker-client.test.ts`; real-worker E2E; worker source inspection | Optional browser performance observation with synthetic large fixture | Proven locally |
 | P0-21 | Experimental `@pierre/diffs/worker` is not adopted without compatibility evidence | ADR 0001 records public exports and the Phase 0 local-worker decision | Revisit only in the later CSP/annotation/performance gate | Proven locally as a documented decision |
-| P0-22 | Production verification builds and serves the production bundle, with no unexpected browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and only the missing-scope test opts into 403; Playwright production server; 7/7 Chromium flows passed, 0 unexpected browser console errors (only those intentional synthetic 401/403 resource messages were allowlisted) | Confirm a fresh machine has the pinned browser installed | Proven locally |
-| P0-23 | Bundle budget stays within the recorded Phase 0 limits | `scripts/check-bundle-budget.mjs`; build measured 317,678-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
+| P0-22 | Production verification builds and serves the production bundle, with no unexpected browser console errors | `pnpm verify`; auto fixture `e2e/fixtures.ts` collects/fails console errors after every test and rejects unexpected origins; only the invalid-token test opts into 401 and the missing-scope test opts into 403; Playwright production server; 9/9 Chromium flows passed, 0 unexpected browser console errors | Confirm a fresh machine has the pinned browser installed | Proven locally |
+| P0-23 | Bundle budget stays within the recorded Phase 0.1 limits | `scripts/check-bundle-budget.mjs`; build measured 276,959-byte initial JS and 790,000-byte largest lazy chunk under 350,000/820,000 | Review release output and immutable asset hosting | Proven locally; release-host review manual |
 | P0-24 | Repository artifacts do not contain known credential-pattern matches | Targeted tracked-path, Git-history heuristic, and `dist/` scans recorded below; all returned zero matches. This is not a complete secret detector. | Inspect any ignored trace/log/screenshot artifacts manually before sharing; follow the checklist allowlist | Targeted scans clean; residual evidence hygiene is manual |
 | P0-25 | Security headers/CSP constrain production deployment | Source fixes API request origin; no header server is part of this probe | Inspect response headers and CSP on the actual static host/container | Manual check; not proven by `vite preview` |
 | P0-26 | Phase 0 keeps credentials in memory and defers encrypted persistence | Component/E2E reload/Lock tests; no vault or persistence module exists | None; confirm the local build does not offer a persistence mode | Proven locally |
@@ -67,28 +67,21 @@ the task plan's completion criteria.
 | P0-28 | No real approving, Request changes, comment, or other mutation endpoint is called in Phase 0 | No mutation client method; E2E allows only expected GET paths; shape tests have no fetch path | Review network panel during the probe; stop if a POST appears unexpectedly | Proven locally |
 | P0-29 | Comparisons and activity watermarks support a future since-last-review view | No comparison/checkpoint implementation exists in Phase 0; adapter activity is read-only normalization | Observe comparison and activity watermark fields on a disposable PR before implementing them | **Unresolved live gate** |
 | P0-30 | WebAuthn PRF and Argon2id choices work across supported browsers | No vault or KDF implementation is included in Phase 0; persistence is explicitly deferred | Run browser capability checks with non-secret test material in a secure-vault probe | **Unresolved live/browser gate** |
-| P0-31 | Implementation remains on `implementation/phase-0`, with `main` containing only the approved baseline | `git branch --show-current`, `git log main`, and the pre-commit `git diff main...HEAD` inspection | Fresh reviewer checks branch ancestry before accepting the phase | Proven locally |
-| P0-32 | Fresh review follows each task and a final review covers the complete range | Prior task reports record review-fixed rounds; this report records the complete `main...HEAD` range | Final reviewer checks `git diff main...implementation/phase-0` | Manual final review |
+| P0-31 | Implementation remains on local `main` with the approved Task 1–3 baseline intact | `git branch --show-current`, `git log --oneline -n 6`, and the pre-commit diff inspection | Fresh reviewer checks branch ancestry before accepting the phase | Proven locally |
+| P0-32 | Fresh review follows each task and a final review covers the complete range | This report and `task-4-report.md` record the Task 4 documentation, verification, visual evidence, and closeout checks | Manual final review | Proven locally |
 
 ## Plan-item accounting
 
 | Plan task | Accounted files/evidence | Result |
 | --- | --- | --- |
-| Task 1 — scaffold and verification harness | Prior report `task-1-report.md`; package scripts, Vite production server, unit/smoke E2E | Complete and review-fixed |
-| Task 2 — contracts and read adapter | Prior report `task-2-report.md`; provider contract, auth/request/schema/client tests and synthetic fixtures | Complete and review-fixed |
-| Task 3 — local diagnostics | Prior report `task-3-report.md`; connection model/component, diagnostics workflow, request-shape tests, intercepted E2E | Complete and review-fixed |
-| Task 4 — diff and worker boundary | Prior report `task-4-report.md`; ADR, patch/worker/DiffReview tests, production E2E and bundle check | Complete and review-fixed |
-| Task 5 — evidence and live gates | This report, `live-bitbucket-checklist.md`, and README | Complete in this commit |
+| Task 1 — supported Bitbucket discovery and redacted errors | Provider tests, diagnostics workflow, and intercepted E2E | Complete and review-fixed |
+| Task 2 — Revelio identity and HeroUI foundation | Runtime metadata, styles, package pinning, and smoke E2E | Complete and review-fixed |
+| Task 3 — product controls and native Diffs themes | Theme, connection, diff, and production E2E coverage | Complete and review-fixed |
+| Task 4 — product documentation and local closeout | README, `live-bitbucket-checklist.md`, this report, plan evidence, and `task-4-report.md` | Complete in this commit |
 
-`git diff main...HEAD` was inspected before this report. The three Task 5
-documents brought the range after baseline `f8eafcd` to 62 changed paths at
-immutable commit `4e84fb0`; this notation means “changes after the baseline,”
-not that the baseline itself is included in the diff. The current fix adds one
-shared fixture, so the post-fix range is 63 changed paths. The implementation
-branch contains no later-phase work. The prior implementation commits after
-the baseline are `e5782a4`, `85e6639`, `d37f3e8`, `970984f`, `6bb160f`,
-`aaeb35a`, `d2038fd`, `04588e0`, `000ba89`, `38d12b0`, and `94cd8f1`, followed
-by immutable Task 5 documentation commit `4e84fb0` and this focused fix.
+The Task 4 closeout is intentionally local on `main`; no push is part of this
+phase. The final review records the exact branch, recent commits, remote, and
+Task 4-only staged paths in `task-4-report.md`.
 
 ## Verification evidence
 
@@ -98,15 +91,17 @@ Exact command, run from a clean production build:
 pnpm verify
 ```
 
-Result: exit code 0 on 2026-08-28.
+Result: exit code 0 on 2026-08-29. The first sandboxed attempt could not bind
+the local preview port (`EPERM`); the same command then passed with the
+approved local environment elevation.
 
-- Biome format: 51 files checked, clean.
-- Biome lint: 52 files checked, clean.
+- Biome format: 55 files checked, clean.
+- Biome lint: 56 files checked, clean.
 - TypeScript project build: passed.
-- Vitest: 12 files, 60 tests passed.
-- Production Vite build and explicit bundle budget: passed (317,678 initial
+- Vitest: 14 files, 74 tests passed.
+- Production Vite build and explicit bundle budget: passed (276,959 initial
   bytes / 350,000; 790,000 largest lazy chunk / 820,000).
-- Playwright against the production preview: 7 Chromium tests passed, 0
+- Playwright against the production preview: 9 Chromium tests passed, 0
   failed, with 0 unexpected browser console errors. Only the intentional
   synthetic 401/403 resource messages in the explicitly opted-in diagnostics
   tests were allowlisted.
@@ -198,14 +193,12 @@ opaque cursor, workspace, repository slug, and id.
 RED: before this fix, each second-page failure serialized the full opaque URL
 including its cursor and concrete repository identifiers.
 
-GREEN: the focused client suite and final verification pass with 12 Vitest
-files/60 tests; no real credentials, live calls, or mutations were used.
+GREEN: the focused client suite and final verification pass with 14 Vitest
+files/74 tests; no real credentials, live calls, or mutations were used.
 
-The final range after this fix is 63 changed paths from baseline `f8eafcd`:
-the one new shared fixture plus the existing Task 5 documentation and test
-imports. The final fix commit is intentionally not named here because this
-report is committed as part of that commit; use `git log -1` and
-`git diff main...HEAD` for immutable branch-state evidence.
+The final Task 4 range is intentionally reviewed from local `main`. The
+closeout report records the exact changed paths and commit after staging; no
+push is attempted.
 
 ## Honest completion state
 

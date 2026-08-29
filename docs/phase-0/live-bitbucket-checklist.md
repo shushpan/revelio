@@ -39,15 +39,23 @@ not turn the Phase 0 synthetic fixtures into live evidence.
 - [ ] Enter the email and token locally and run diagnostics.
 - [ ] Confirm the first request is the identity endpoint and that all requests
       use `GET` and the `https://api.bitbucket.org` origin.
+- [ ] Confirm that at least one workspace and one repository are discovered in
+      the local report. Record only the endpoint templates
+      `/2.0/user/workspaces?pagelen=1` and
+      `/2.0/repositories/{workspace}?pagelen=1`; never retain either slug.
 - [ ] Confirm diagnostics reports only the capability status/error category,
       not response bodies, source, comments, repository names, PR titles, or
       credential material.
 - [ ] Check identity, workspace visibility, repository visibility, open PR
       list, activity, comments, diffstat, and diff one at a time in the
       displayed report.
+- [ ] Record only each capability outcome (`succeeded`, `failed`, or
+      `unavailable`), its HTTP status class (`2xx`, `4xx`, or `5xx`) when one is
+      available, and the redacted error category. Do not copy the provider
+      response body or an exact status code.
 - [ ] If a request fails, classify it as auth, permission, CORS/network,
-      rate-limit, decode, server, pagination, or unavailable. Do not copy the
-      provider response body.
+      rate-limit, decode, server, pagination, or unavailable without retaining
+      provider details.
 - [ ] Click Lock and confirm fields/results clear; reload and confirm the
       fields remain empty. Clear browser network history afterward.
 
@@ -80,12 +88,17 @@ operation order locally but do not claim rollback.
 
 The only values allowed in a report, screenshot, trace summary, or issue are:
 
-- endpoint template, such as `/repositories/{workspace}/{repository}/pullrequests`;
+- endpoint template, such as `/2.0/user/workspaces?pagelen=1` or
+  `/2.0/repositories/{workspace}?pagelen=1`;
 - HTTP status class only (`2xx`, `4xx`, `5xx`), not exact response bodies;
 - capability result (`succeeded`, `failed`, or `unavailable`) and redacted error
   category;
 - timestamp with timezone;
 - app version and source revision.
+
+A sanitized discovery confirmation may therefore read: “workspace discovery:
+succeeded, `2xx`; repository discovery: succeeded, `2xx`; one workspace and
+one repository observed.” It must not include the workspace or repository slug.
 
 ## Forbidden evidence
 

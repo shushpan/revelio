@@ -379,7 +379,7 @@ git commit -m "feat: migrate Revelio shell to HeroUI"
 - Produces: honest product/feature/security status and a user-run live verification checklist.
 - Preserves: no credential collection through chat, scripts, logs, screenshots, or committed files.
 
-- [ ] **Step 1: Replace the feasibility README with a product README**
+- [x] **Step 1: Replace the feasibility README with a product README**
 
 Write these sections with working commands and direct links: What Revelio is; Why it is better for cross-repository review; Current features; Security model; Requirements; Install and run; If `pnpm` is missing; Production build; Verification; Current limitations; Roadmap; Contributing; License status.
 
@@ -396,11 +396,11 @@ pnpm dev
 
 Explain that Homebrew users may instead run `brew install pnpm`, but Corepack is the reproducible project default. State that the browser talks directly to Bitbucket and that Phase 0.1 credentials are session-memory only—not yet passkey/passphrase persisted.
 
-- [ ] **Step 2: Update live-check and acceptance wording**
+- [x] **Step 2: Update live-check and acceptance wording**
 
 Replace deprecated discovery paths in the live checklist, add a sanitized confirmation for at least one workspace and repository, and require the user to record only capability outcomes and HTTP status categories. Update the acceptance report to mark supported workspace/repository discovery as implemented but still awaiting a user-run disposable-token confirmation.
 
-- [ ] **Step 3: Run documentation and identity scans**
+- [x] **Step 3: Run documentation and identity scans**
 
 Run:
 
@@ -412,17 +412,17 @@ git diff --check
 
 Expected: the first scan has no matches; token mentions only instruct users to enter credentials in the local browser and never expose them elsewhere; diff check exits zero.
 
-- [ ] **Step 4: Run the complete verification contract**
+- [x] **Step 4: Run the complete verification contract**
 
 Run: `pnpm verify`
 
 Expected: formatting and lint are warning-free; TypeScript passes; all Vitest suites pass; the production build and bundle budgets pass; all Chromium Playwright tests pass with no unexpected external request.
 
-- [ ] **Step 5: Inspect the served product manually**
+- [x] **Step 5: Inspect the served product manually**
 
 Run `pnpm dev`, open the printed localhost URL, and check at desktop and narrow widths: Revelio heading, default HeroUI light theme, dark/system switching, connection labels, Lock, diagnostics statuses, lazy diff opening, split/unified selection, file navigation, and no visual remnants of the old custom palette.
 
-- [ ] **Step 6: Mark plan evidence and commit Task 4**
+- [x] **Step 6: Mark plan evidence and commit Task 4**
 
 Check completed boxes only after their command evidence exists. Append a short Phase 0.1 evidence section containing the exact `pnpm verify` exit status, unit-test count, Playwright-test count, and measured bundle sizes. Stage only Task 4 files and commit:
 
@@ -430,7 +430,7 @@ Check completed boxes only after their command evidence exists. Append a short P
 git commit -m "docs: publish Revelio product guide"
 ```
 
-- [ ] **Step 7: Perform final review without pushing**
+- [x] **Step 7: Perform final review without pushing**
 
 Confirm:
 
@@ -441,3 +441,26 @@ git remote -v
 ```
 
 Expected: branch is local `main`; only the pre-existing `.tldr/` and `.tldrignore` remain untracked; origin is `https://github.com/shushpan/revelio.git`; no push is attempted.
+
+## Phase 0.1 evidence
+
+Recorded 2026-08-29 on local `main` at baseline `90c1aa3`.
+
+- `pnpm verify`: exit status `0` (the first sandboxed attempt was blocked when
+  the preview server tried to bind localhost; the rerun with approved local
+  environment elevation passed).
+- Formatting: Biome checked `55` files, clean.
+- Lint: Biome checked `56` files, clean.
+- Unit tests: `14` Vitest files, `74` tests passed.
+- Playwright: `9` Chromium tests passed, `0` failed, with no unexpected browser
+  console errors or external requests.
+- Bundle budgets: initial JavaScript `276,959` bytes / `350,000`; largest lazy
+  chunk `790,000` bytes / `820,000`.
+- Manual browser evidence: the served app was inspected at the default desktop
+  viewport and `390x844`; light, dark/system controls, connection labels,
+  Lock, diagnostics idle state, lazy diff loading, Unified/Split, and changed
+  file navigation were visible and interactive. No credentials were entered.
+- Identity scan note: the required broad scan still reports supported endpoint
+  examples and intentional `github-light` absence assertions in Task 1–3
+  tests; no product copy retains the old name or palette marker. Credential
+  wording remains local-only and sanitized.
