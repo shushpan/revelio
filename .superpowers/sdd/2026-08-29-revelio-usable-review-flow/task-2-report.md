@@ -37,3 +37,24 @@ Commit reasoning: `.git/Codex/commits/09f0485/reasoning.md`
 
 - `pnpm run build` remains red only at the existing bundle-budget gate because the generated lazy diff-language chunk exceeds the 820 kB threshold. This was left isolated rather than changing unrelated bundling or Task 3-owned e2e work.
 - The old `ConnectionDiagnostics` module and its tests remain in the repository for compatibility, but the normal `App` flow no longer imports or renders that diagnostics harness.
+
+## Round 1 fixes
+
+### RED evidence
+
+- Added review-screen tests for failed general and inline comment submissions; they exercise the prior bug where comment state was cleared and the review was checkpointed despite a failed request.
+- The bundle gate had previously failed with a 950,296-byte lazy Effect chunk, exposing the namespace-style dynamic import.
+
+### GREEN evidence
+
+- `pnpm exec vitest run src/app/App.test.tsx src/inbox/load-inbox.test.ts src/review/ReviewScreen.test.tsx src/providers/bitbucket-cloud/client.test.ts` passed: 4 files, 21 tests.
+- `pnpm run format:check`, `pnpm run lint`, and `pnpm run typecheck` passed.
+- `pnpm run build` passed with initial 296,832 bytes / 350,000 and largest lazy 790,000 bytes / 820,000.
+
+### Fix commit
+
+- `3abe647` — `Fix review flow edge cases`
+
+### Concerns
+
+- Refresh errors now show a compact warning, but there is no separate refresh-specific component test; the state is intentionally kept in `App` to avoid expanding the slice.
