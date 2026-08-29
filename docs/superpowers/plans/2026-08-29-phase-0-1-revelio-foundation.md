@@ -405,12 +405,47 @@ Replace deprecated discovery paths in the live checklist, add a sanitized confir
 Run:
 
 ```bash
-rg -n "Fast Review|fast-review|/workspaces\?|/repositories\?role=member|github-light" README.md src e2e index.html package.json docs/phase-0
+set -eu
+scan_forbidden() {
+  scan_label="$1"
+  scan_pattern="$2"
+  shift 2
+  scan_matches="$(rg -n "$scan_pattern" "$@" || true)"
+  if [ -n "$scan_matches" ]; then
+    printf 'FAIL: %s\n%s\n' "$scan_label" "$scan_matches" >&2
+    exit 1
+  fi
+  printf 'PASS: %s (no forbidden matches)\n' "$scan_label"
+}
+scan_forbidden "old product identity" 'Fast Review|fast-review' README.md src e2e index.html package.json docs/phase-0
+scan_forbidden "deprecated discovery paths" '(^|[^[:alnum:]_])/(workspaces\?|repositories\?role=member)' README.md src e2e index.html package.json docs/phase-0
+scan_forbidden "custom Diffs theme in product files" 'github-light' README.md src index.html package.json docs/phase-0
+scan_matches="$(rg -n 'github-light' e2e || true)"
+printf 'Allowed negative Diffs assertions:\n%s\n' "$scan_matches"
+scan_forbidden_matches="$(printf '%s\n' "$scan_matches" | rg -v 'not\.toContain\("github-light"\)' || true)"
+if [ -n "$scan_forbidden_matches" ]; then
+  printf 'FAIL: unexpected Diffs marker usage\n%s\n' "$scan_forbidden_matches" >&2
+  exit 1
+fi
+printf 'PASS: E2E marker matches are negative assertions only\n'
+scan_matches="$(rg -n '/2\.0/user/workspaces\?pagelen=1|/2\.0/repositories/\{workspace\}\?pagelen=1' README.md docs/phase-0 e2e src || true)"
+if [ -z "$scan_matches" ]; then
+  printf 'FAIL: supported discovery references are missing\n' >&2
+  exit 1
+fi
+printf 'PASS: supported discovery references present:\n%s\n' "$scan_matches"
 rg -n "real token|API token" README.md docs/phase-0/live-bitbucket-checklist.md
 git diff --check
 ```
 
-Expected: the first scan has no matches; token mentions only instruct users to enter credentials in the local browser and never expose them elsewhere; diff check exits zero.
+Expected: the script exits zero. It fails on old product identity, deprecated
+`/workspaces?` or `/repositories?role=member` paths, or custom Diffs theme use
+in product files. Supported `/2.0/user/workspaces?pagelen=1` and
+`/2.0/repositories/{workspace}?pagelen=1` references are required and reported
+as allowed. Existing E2E `github-light` matches are allowed only when they are
+negative `not.toContain("github-light")` assertions. Token mentions only
+instruct users to enter credentials in the local browser and never expose them
+elsewhere; `git diff --check` exits zero.
 
 - [x] **Step 4: Run the complete verification contract**
 
@@ -460,7 +495,8 @@ Recorded 2026-08-29 on local `main` at baseline `90c1aa3`.
   viewport and `390x844`; light, dark/system controls, connection labels,
   Lock, diagnostics idle state, lazy diff loading, Unified/Split, and changed
   file navigation were visible and interactive. No credentials were entered.
-- Identity scan note: the required broad scan still reports supported endpoint
-  examples and intentional `github-light` absence assertions in Task 1–3
-  tests; no product copy retains the old name or palette marker. Credential
-  wording remains local-only and sanitized.
+- Identity scan: the revised command exits `0`, reports supported discovery
+  references as allowed, confirms E2E `github-light` matches are negative
+  assertions only, and finds no forbidden old identity, deprecated endpoint,
+  or product theme matches. Credential wording remains local-only and
+  sanitized.
