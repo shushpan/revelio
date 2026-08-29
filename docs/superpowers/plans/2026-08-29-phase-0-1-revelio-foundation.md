@@ -435,27 +435,70 @@ printf 'PASS: supported discovery documentation is scoped to README/live-check/a
 
 printf '%s\n' 'Runtime/test validation:'
 fail_on_matches "deprecated discovery paths in source/tests" '(^|[^[:alnum:]_])/(workspaces\?|repositories\?role=member)' src e2e
-source_templates="$(rg -n -F '"/user/workspaces"' src/providers/bitbucket-cloud/diagnostics.ts; rg -n -F '"/repositories/{workspace}"' src/providers/bitbucket-cloud/diagnostics.ts || true)"
-if [ -z "$source_templates" ]; then
-  printf 'FAIL: relative supported discovery templates are missing from diagnostics source\n' >&2
+discovery_source='src/providers/bitbucket-cloud/diagnostics.ts'
+
+workspace_source="$(rg -n -F '"workspace-visibility": "/user/workspaces",' "$discovery_source" || true)"
+workspace_fetch="$(rg -n -F '"/user/workspaces?pagelen=1",' "$discovery_source" || true)"
+if [ -z "$workspace_source" ] || [ -z "$workspace_fetch" ]; then
+  printf 'FAIL: workspace discovery source contract is incomplete\n' >&2
   exit 1
 fi
-printf 'PASS: diagnostics source uses the supported relative templates\n%s\n' "$source_templates"
-fixture_paths="$(rg -n -F '/2.0/user/workspaces?pagelen=1' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts; rg -n -F '/2.0/repositories/acme?pagelen=1' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts || true)"
-if [ -z "$fixture_paths" ]; then
-  printf 'FAIL: exact supported fixture paths are missing from source/tests\n' >&2
+if [ "$(rg -l -F 'workspace-visibility' "$discovery_source" || true)" != "$discovery_source" ]; then
+  printf 'FAIL: workspace discovery source file scope changed\n' >&2
   exit 1
 fi
-printf 'PASS: source/tests use exact supported fixture paths\n%s\n' "$fixture_paths"
+printf 'PASS: workspace discovery source contract and file scope\n%s\n%s\n' "$workspace_source" "$workspace_fetch"
+
+repository_source="$(rg -n -F '"repository-visibility": "/repositories/{workspace}",' "$discovery_source" || true)"
+repository_fetch="$(rg -n -F '/repositories/${encodeURIComponent(selectedWorkspace)}?pagelen=1' "$discovery_source" || true)"
+if [ -z "$repository_source" ] || [ -z "$repository_fetch" ]; then
+  printf 'FAIL: repository discovery source contract is incomplete\n' >&2
+  exit 1
+fi
+if [ "$(rg -l -F 'repository-visibility' "$discovery_source" || true)" != "$discovery_source" ]; then
+  printf 'FAIL: repository discovery source file scope changed\n' >&2
+  exit 1
+fi
+printf 'PASS: repository discovery source contract and file scope\n%s\n%s\n' "$repository_source" "$repository_fetch"
+
+workspace_files="$(rg -l -F '/2.0/user/workspaces' src e2e | sort -u || true)"
+workspace_expected_files="$(printf '%s\n' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sort -u)"
+if [ "$workspace_files" != "$workspace_expected_files" ]; then
+  printf 'FAIL: workspace discovery fixture file scope changed\n%s\n' "$workspace_files" >&2
+  exit 1
+fi
+workspace_tokens="$(rg -o --no-filename '/2\.0/user/workspaces(\?pagelen=1)?"' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sed 's/"$//' | sort -u || true)"
+workspace_expected_tokens="$(printf '%s\n' /2.0/user/workspaces '/2.0/user/workspaces?pagelen=1' | sort -u)"
+if [ "$workspace_tokens" != "$workspace_expected_tokens" ]; then
+  printf 'FAIL: workspace discovery fixture variants changed\n%s\n' "$workspace_tokens" >&2
+  exit 1
+fi
+printf 'PASS: workspace discovery fixture scope and exact variants\n%s\n' "$workspace_tokens"
+
+repository_files="$(rg -l -e '/2\.0/repositories/(acme|acme%20cloud)(\?pagelen=1)?"' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts || true)"
+repository_expected_files="$(printf '%s\n' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sort -u)"
+if [ "$repository_files" != "$repository_expected_files" ]; then
+  printf 'FAIL: repository discovery fixture file scope changed\n%s\n' "$repository_files" >&2
+  exit 1
+fi
+repository_tokens="$(rg -o --no-filename '/2\.0/repositories/[^/[:space:]"?]+(\?pagelen=1)?"' src/providers/bitbucket-cloud/diagnostics.test.ts e2e/connection-diagnostics.spec.ts | sed 's/"$//' | sort -u || true)"
+repository_expected_tokens="$(printf '%s\n' /2.0/repositories/acme '/2.0/repositories/acme?pagelen=1' '/2.0/repositories/acme%20cloud?pagelen=1' | sort -u)"
+if [ "$repository_tokens" != "$repository_expected_tokens" ]; then
+  printf 'FAIL: repository discovery fixture variants changed\n%s\n' "$repository_tokens" >&2
+  exit 1
+fi
+printf 'PASS: repository discovery fixture scope and exact variants\n%s\n' "$repository_tokens"
 
 fail_on_matches "custom Diffs theme in product files" 'github-light' README.md src index.html package.json docs/phase-0
 e2e_diff_matches="$(rg -n -F 'github-light' e2e || true)"
-e2e_unexpected_matches="$(printf '%s\n' "$e2e_diff_matches" | rg -v -F 'not.toContain("github-light")' || true)"
-if [ -n "$e2e_unexpected_matches" ]; then
-  printf 'FAIL: unexpected E2E Diffs marker usage\n%s\n' "$e2e_unexpected_matches" >&2
+e2e_diff_lines="$(printf '%s\n' "$e2e_diff_matches" | sed -E 's/^[^:]+:[0-9]+:[[:space:]]*//' | sort)"
+e2e_expected_line='expect(await page.locator(".diff-view").innerHTML()).not.toContain("github-light");'
+e2e_expected_lines="$(printf '%s\n%s\n' "$e2e_expected_line" "$e2e_expected_line" | sort)"
+if [ "$e2e_diff_lines" != "$e2e_expected_lines" ]; then
+  printf 'FAIL: E2E Diffs marker lines changed\n%s\n' "$e2e_diff_lines" >&2
   exit 1
 fi
-printf 'PASS: E2E Diffs marker matches are exact negative assertions\n%s\n' "$e2e_diff_matches"
+printf 'PASS: E2E Diffs marker lines match the two exact negative assertions\n%s\n' "$e2e_diff_lines"
 
 rg -n "real token|API token" README.md docs/phase-0/live-bitbucket-checklist.md
 git diff --check
@@ -465,10 +508,14 @@ Expected: the script exits zero. Documentation validation requires supported
 templated discovery references only in `README.md`,
 `docs/phase-0/live-bitbucket-checklist.md`, and
 `docs/phase-0/acceptance-report.md`; it fails on old product identity or
-deprecated paths there. Runtime/test validation separately requires the exact
-relative diagnostics templates and `/2.0/...` fixture paths, and fails on any
-deprecated path. Product files contain no `github-light`; E2E occurrences are
-allowed only as exact negative `not.toContain("github-light")` assertions.
+deprecated paths there. Runtime/test validation separately requires workspace
+and repository discovery in the exact production/test files, checks the
+relative diagnostics templates and exact supported fixture variants (including
+the encoded workspace fixture), and fails on any deprecated path or unexpected
+file/variant. Product files contain no `github-light`; the complete normalized
+E2E matching-line list must equal the two exact
+`expect(await page.locator(".diff-view").innerHTML()).not.toContain("github-light");`
+assertions.
 Token mentions only instruct users to enter credentials in the local browser
 and never expose them elsewhere; `git diff --check` exits zero.
 
