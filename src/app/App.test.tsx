@@ -1,8 +1,27 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+const localStorageMock = {
+  clear: vi.fn(),
+  getItem: vi.fn(() => null),
+  key: vi.fn(() => null),
+  length: 0,
+  removeItem: vi.fn(),
+  setItem: vi.fn(),
+} as unknown as Storage;
+
 describe("Revelio shell", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", localStorageMock);
+    vi.stubGlobal("matchMedia", () => ({
+      addEventListener: vi.fn(),
+      matches: false,
+      removeEventListener: vi.fn(),
+    }));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
   it("shows the product name and Phase 0 readiness", () => {
     render(<App />);
 

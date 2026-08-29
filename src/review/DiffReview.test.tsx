@@ -2,6 +2,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DiffReview } from "./DiffReview";
 
+vi.mock("@pierre/diffs/react", () => ({
+  CodeView: ({ options }: { options: unknown }) => (
+    <div data-options={JSON.stringify(options)} data-testid="code-view" />
+  ),
+}));
+
 const patch = [
   "diff --git a/src/alpha.ts b/src/alpha.ts",
   "index 1111111..2222222 100644",
@@ -43,7 +49,7 @@ describe("DiffReview", () => {
   afterEach(() => cleanup());
 
   it("renders a multi-file diff with layout toggle and file navigation", async () => {
-    render(<DiffReview patch={patch} />);
+    render(<DiffReview patch={patch} themeType="light" />);
 
     expect(await screen.findByRole("heading", { name: "Changes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Unified" })).toBeInTheDocument();
@@ -61,7 +67,7 @@ describe("DiffReview", () => {
 
   it("emits only a local stable inline-comment intent", async () => {
     const onInlineComment = vi.fn();
-    render(<DiffReview patch={patch} onInlineComment={onInlineComment} />);
+    render(<DiffReview patch={patch} themeType="light" onInlineComment={onInlineComment} />);
 
     await waitFor(() =>
       expect(
@@ -79,7 +85,9 @@ describe("DiffReview", () => {
 
   it("navigates the rendered diff and anchors the local intent to changed coordinates", async () => {
     const onInlineComment = vi.fn();
-    render(<DiffReview patch={anchoredPatch} onInlineComment={onInlineComment} />);
+    render(
+      <DiffReview patch={anchoredPatch} themeType="light" onInlineComment={onInlineComment} />,
+    );
 
     await screen.findByRole("button", { name: "Comment on src/alpha.ts line 3" });
     fireEvent.click(screen.getByRole("button", { name: "src/zeta.ts" }));
@@ -93,5 +101,16 @@ describe("DiffReview", () => {
       line: 2,
       side: "additions",
     });
+  });
+
+  it("passes the resolved native theme type without a custom theme marker", async () => {
+    render(<DiffReview patch={patch} themeType="dark" />);
+
+    const options = JSON.parse(
+      (await screen.findByTestId("code-view")).getAttribute("data-options") ?? "{}",
+    ) as Record<string, unknown>;
+
+    expect(options).toMatchObject({ themeType: "dark" });
+    expect(options).not.toHaveProperty("theme");
   });
 });

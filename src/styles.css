@@ -28,6 +28,10 @@ body {
 }
 
 .app-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
   margin-bottom: 2rem;
 }
 
@@ -83,13 +87,6 @@ h1 {
   gap: 1rem;
 }
 
-.connection-form label {
-  display: grid;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
 .diagnostics-status {
   margin: 1.25rem 0 0;
 }
@@ -116,12 +113,6 @@ h1 {
   gap: 1rem;
   justify-content: space-between;
   padding: 0.4rem 0;
-}
-
-.result-succeeded,
-.result-failed,
-.result-unavailable {
-  font-weight: 700;
 }
 
 .readiness-card {
@@ -173,6 +164,10 @@ h1 {
 .layout-toggle {
   display: flex;
   gap: 0.4rem;
+}
+
+.theme-control {
+  flex: 0 0 auto;
 }
 
 .review-summary,

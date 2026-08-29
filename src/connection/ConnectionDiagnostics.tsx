@@ -1,14 +1,20 @@
+import { Badge } from "@heroui/react/badge";
+import { Button } from "@heroui/react/button";
+import { Card } from "@heroui/react/card";
+import { Input } from "@heroui/react/input";
+import { Label } from "@heroui/react/label";
+import { TextField } from "@heroui/react/textfield";
 import { Effect } from "effect";
-import { useRef, useState, type FormEvent, type JSX } from "react";
+import { type FormEvent, type JSX, useRef, useState } from "react";
+import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
+import { runBitbucketDiagnostics } from "../providers/bitbucket-cloud/diagnostics";
 import {
-  diagnosticCapabilities,
   type DiagnosticCapability,
   type DiagnosticErrorTag,
   type DiagnosticsReport,
   type DiagnosticsState,
+  diagnosticCapabilities,
 } from "./model";
-import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
-import { runBitbucketDiagnostics } from "../providers/bitbucket-cloud/diagnostics";
 
 const capabilityLabels: Record<DiagnosticCapability, string> = {
   identity: "Identity",
@@ -68,55 +74,52 @@ export function ConnectionDiagnostics(): JSX.Element {
 
   return (
     <main className="app-shell connection-page">
-      <header className="app-header">
-        <p className="eyebrow">Personal review workspace</p>
-        <h1>Revelio</h1>
-        <p className="phase-label">Phase 0 readiness</p>
-      </header>
-      <section className="connection-card" aria-labelledby="connection-title">
-        <div className="connection-heading">
+      <Card className="connection-card" aria-labelledby="connection-title">
+        <Card.Header className="connection-heading">
           <div>
             <p className="eyebrow">Phase 0</p>
-            <h2 id="connection-title">Connect to Bitbucket Cloud</h2>
+            <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
           </div>
-          <button type="button" className="secondary-button" onClick={lock}>
+          <Button variant="secondary" onPress={lock}>
             Lock
-          </button>
-        </div>
-        <p className="connection-copy">
+          </Button>
+        </Card.Header>
+        <Card.Description className="connection-copy">
           Use your Atlassian email and a Bitbucket API token to run read-only connection
           diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
           Phase 0.
-        </p>
-        <form onSubmit={run} className="connection-form">
-          <label>
-            Atlassian email
-            <input
-              type="email"
-              autoComplete="off"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-          <label>
-            Bitbucket API token
-            <input
-              type="password"
-              autoComplete="off"
-              value={apiToken}
-              onChange={(event) => setApiToken(event.target.value)}
-            />
-          </label>
-          <button
-            type="submit"
-            className="primary-button"
-            disabled={diagnostics.state === "running" || email.trim() === "" || apiToken === ""}
-          >
-            {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
-          </button>
-        </form>
-        <DiagnosticsSummary diagnostics={diagnostics} />
-      </section>
+        </Card.Description>
+        <Card.Content>
+          <form onSubmit={run} className="connection-form">
+            <TextField name="email" fullWidth>
+              <Label>Atlassian email</Label>
+              <Input
+                type="email"
+                autoComplete="off"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </TextField>
+            <TextField name="apiToken" fullWidth>
+              <Label>Bitbucket API token</Label>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={apiToken}
+                onChange={(event) => setApiToken(event.target.value)}
+              />
+            </TextField>
+            <Button
+              type="submit"
+              variant="primary"
+              isDisabled={diagnostics.state === "running" || email.trim() === "" || apiToken === ""}
+            >
+              {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
+            </Button>
+          </form>
+          <DiagnosticsSummary diagnostics={diagnostics} />
+        </Card.Content>
+      </Card>
     </main>
   );
 }
@@ -177,10 +180,20 @@ function DiagnosticsSummary({
           return (
             <li key={capability}>
               <span>{capabilityLabels[capability]}</span>
-              <span className={`result-${result.status}`}>
+              <Badge
+                className={`result-${result.status}`}
+                color={
+                  result.status === "succeeded"
+                    ? "success"
+                    : result.status === "failed"
+                      ? "danger"
+                      : "default"
+                }
+                variant="soft"
+              >
                 {result.status}
                 {result.errorTag ? ` — ${errorLabels[result.errorTag]}` : ""}
-              </span>
+              </Badge>
             </li>
           );
         })}

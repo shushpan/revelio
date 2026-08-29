@@ -4,6 +4,7 @@ test("renders the production diff-first review surface with real worker preproce
   page,
 }) => {
   await page.goto("/?fixture=large");
+  await page.getByRole("button", { name: "Light" }).click();
   await expect(page.getByRole("heading", { name: "Changes" })).toBeVisible();
   await expect(page.getByRole("button", { name: "src/large.ts", exact: true })).toBeVisible();
   await expect(page.getByText("6 files · 200 additions · 0 deletions")).toBeVisible();
@@ -25,6 +26,15 @@ test("renders the production diff-first review surface with real worker preproce
   await expect(page.locator(".inline-comment-status")).toContainText(
     "Local inline-comment intent: src/medium-e.ts:3 (additions)",
   );
+  expect(await page.locator(".diff-view").innerHTML()).not.toContain("github-light");
+
+  await page.getByRole("button", { name: "Dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator(".diff-view")).toContainText("e28");
+  await page.getByRole("button", { name: "src/large.ts", exact: true }).click();
+  await expect(page.locator(".diff-view")).toContainText("generated01");
+  expect(await page.locator(".diff-view").innerHTML()).not.toContain("github-light");
 });
 
 test("keeps the lazy diff bundle out of the normal root until opened", async ({ page }) => {

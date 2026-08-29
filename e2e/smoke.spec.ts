@@ -8,3 +8,17 @@ test("renders the Revelio shell without browser console errors", async ({ page }
   await expect(page.getByText("Phase 0 readiness")).toBeVisible();
   await expect(page).toHaveTitle("Revelio");
 });
+
+test("switches between dark and system themes", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Dark" }).click();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+  await page.getByRole("button", { name: "System" }).click();
+  await expect(page.getByRole("button", { name: "System" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});

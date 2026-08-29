@@ -1,8 +1,9 @@
+import { Button } from "@heroui/react/button";
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
-import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { type JSX, useEffect, useMemo, useRef, useState } from "react";
 import {
-  preprocessPatchAsync,
   type PreprocessPatchAsyncOptions,
+  preprocessPatchAsync,
 } from "../workers/patch-worker-client";
 import type { PreparedPatch } from "./patch";
 
@@ -14,12 +15,14 @@ export interface InlineCommentIntent {
 
 export interface DiffReviewProps {
   readonly patch: string;
+  readonly themeType: "light" | "dark";
   readonly onInlineComment?: (intent: InlineCommentIntent) => void;
   readonly preprocessOptions?: PreprocessPatchAsyncOptions;
 }
 
 export function DiffReview({
   patch,
+  themeType,
   onInlineComment,
   preprocessOptions,
 }: DiffReviewProps): JSX.Element {
@@ -99,22 +102,22 @@ export function DiffReview({
           <h2 id="changes-title">Changes</h2>
         </div>
         <div className="layout-toggle">
-          <button
-            type="button"
-            className="secondary-button"
+          <Button
             aria-pressed={layout === "unified"}
-            onClick={() => setLayout("unified")}
+            className="layout-button"
+            variant={layout === "unified" ? "primary" : "secondary"}
+            onPress={() => setLayout("unified")}
           >
             Unified
-          </button>
-          <button
-            type="button"
-            className="secondary-button"
+          </Button>
+          <Button
             aria-pressed={layout === "split"}
-            onClick={() => setLayout("split")}
+            className="layout-button"
+            variant={layout === "split" ? "primary" : "secondary"}
+            onPress={() => setLayout("split")}
           >
             Split
-          </button>
+          </Button>
         </div>
       </div>
       {prepared ? (
@@ -125,28 +128,28 @@ export function DiffReview({
           </div>
           <nav className="review-file-nav" aria-label="Changed files">
             {prepared.files.map((file) => (
-              <button
-                type="button"
+              <Button
                 key={file.id}
                 className="file-nav-button"
                 aria-current={file.path === activeFile?.path ? "page" : undefined}
-                onClick={() => navigateToFile(file)}
+                variant="secondary"
+                onPress={() => navigateToFile(file)}
               >
                 {file.path}
-              </button>
+              </Button>
             ))}
           </nav>
           {inlineComment ? (
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               className="inline-comment-button"
-              onClick={() => {
+              onPress={() => {
                 setLastIntent(inlineComment);
                 onInlineComment?.(inlineComment);
               }}
             >
               Comment on {inlineComment.path} line {inlineComment.line}
-            </button>
+            </Button>
           ) : null}
           {lastIntent ? (
             <p className="inline-comment-status" role="status">
@@ -160,8 +163,7 @@ export function DiffReview({
               disableWorkerPool
               options={{
                 diffStyle: layout,
-                themeType: "light",
-                theme: "github-light",
+                themeType,
                 lineDiffType: "none",
                 layout: { paddingTop: 0, paddingBottom: 0, gap: 12 },
               }}

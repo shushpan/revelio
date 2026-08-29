@@ -1,7 +1,10 @@
 import "../styles.css";
+import { useTheme } from "@heroui/react";
+import { Button } from "@heroui/react/button";
 import type { JSX } from "react";
 import { lazy, Suspense, useState } from "react";
 import { ConnectionDiagnostics } from "../connection/ConnectionDiagnostics";
+import { type ThemeChoice, ThemeControl } from "../ui/ThemeControl";
 
 const DiffDemo = lazy(() =>
   import("../review/DiffDemo").then(({ DiffDemo: demo }) => ({ default: demo })),
@@ -10,8 +13,19 @@ const DiffDemo = lazy(() =>
 export function App(): JSX.Element {
   const largeFixture = new URLSearchParams(window.location.search).get("fixture") === "large";
   const [isDiffDemoOpen, setIsDiffDemoOpen] = useState(largeFixture);
+  const { theme, resolvedTheme, setTheme } = useTheme("system");
+  const selectedTheme: ThemeChoice = theme === "light" || theme === "dark" ? theme : "system";
+  const diffTheme = resolvedTheme === "dark" ? "dark" : "light";
   return (
     <>
+      <header className="app-shell app-header">
+        <div>
+          <p className="eyebrow">Personal review workspace</p>
+          <h1>Revelio</h1>
+          <p className="phase-label">Phase 0 readiness</p>
+        </div>
+        <ThemeControl theme={selectedTheme} resolvedTheme={diffTheme} onThemeChange={setTheme} />
+      </header>
       <ConnectionDiagnostics />
       <div className="app-shell review-shell">
         {isDiffDemoOpen ? (
@@ -22,12 +36,12 @@ export function App(): JSX.Element {
               </p>
             }
           >
-            <DiffDemo large={largeFixture} />
+            <DiffDemo large={largeFixture} themeType={diffTheme} />
           </Suspense>
         ) : (
-          <button type="button" className="primary-button" onClick={() => setIsDiffDemoOpen(true)}>
+          <Button variant="primary" onPress={() => setIsDiffDemoOpen(true)}>
             Open diff demo
-          </button>
+          </Button>
         )}
       </div>
     </>
