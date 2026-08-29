@@ -8,6 +8,18 @@ export interface ReadRequestOptions {
   readonly signal?: AbortSignal;
 }
 
+const buildApiUrl = (path: string): URL => {
+  if (!path.startsWith("/") && path.includes("://")) {
+    throw new TypeError("Bitbucket API paths must be relative");
+  }
+  if (path.startsWith("//") || path.includes("\\")) {
+    throw new TypeError("Bitbucket API paths must be relative");
+  }
+
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return new URL(`${BITBUCKET_API_BASE}${normalizedPath}`);
+};
+
 const buildAuthenticatedGet = (
   url: URL,
   credentials: BitbucketCredentials,
@@ -19,22 +31,40 @@ const buildAuthenticatedGet = (
   return new Request(url, { method: "GET", headers, signal: options.signal, cache: "no-store" });
 };
 
+const buildAuthenticatedMutation = (
+  url: URL,
+  credentials: BitbucketCredentials,
+  body: unknown,
+  options: ReadRequestOptions,
+): Request => {
+  const headers = new Headers();
+  headers.set("Accept", "application/json");
+  headers.set("Authorization", encodeBasicAuthorization(credentials));
+  const hasBody = body !== undefined;
+  if (hasBody) headers.set("Content-Type", "application/json");
+  return new Request(url, {
+    method: "POST",
+    headers,
+    signal: options.signal,
+    cache: "no-store",
+    ...(hasBody ? { body: JSON.stringify(body) } : {}),
+  });
+};
+
 export const buildBitbucketRequest = (
   path: string,
   credentials: BitbucketCredentials,
   options: ReadRequestOptions = {},
 ): Request => {
-  if (!path.startsWith("/") && path.includes("://")) {
-    throw new TypeError("Bitbucket API paths must be relative");
-  }
-  if (path.startsWith("//") || path.includes("\\")) {
-    throw new TypeError("Bitbucket API paths must be relative");
-  }
-
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  const url = new URL(`${BITBUCKET_API_BASE}${normalizedPath}`);
-  return buildAuthenticatedGet(url, credentials, options);
+  return buildAuthenticatedGet(buildApiUrl(path), credentials, options);
 };
+
+export const buildBitbucketMutationRequest = (
+  path: string,
+  credentials: BitbucketCredentials,
+  body?: unknown,
+  options: ReadRequestOptions = {},
+): Request => buildAuthenticatedMutation(buildApiUrl(path), credentials, body, options);
 
 /** Build an authenticated request for a previously validated opaque Bitbucket URL. */
 export const buildBitbucketRequestForUrl = (

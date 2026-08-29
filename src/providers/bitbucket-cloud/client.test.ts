@@ -62,7 +62,90 @@ describe("Bitbucket read client", () => {
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/activity?page=1",
     ]);
     expect(requests.every((request) => request.cache === "no-store")).toBe(true);
-    expect(client.capabilities.canWriteReviews).toBe(false);
+    expect(client.capabilities.canWriteReviews).toBe(true);
+  });
+
+  it("fetches diffs and sends review actions with exact Bitbucket requests", async () => {
+    const requests: Array<{ method: string; url: string; body: string | null }> = [];
+    const fetcher = vi.fn(async (request: Request) => {
+      requests.push({
+        method: request.method,
+        url: request.url,
+        body: request.body === null ? null : await request.clone().text(),
+      });
+      if (request.url.endsWith("/diff"))
+        return new Response("diff --git a/a.ts b/a.ts", { status: 200 });
+      return new Response(null, { status: 204 });
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+    const ref = { repository: { workspace: "acme", slug: "review" }, id: 7 } as const;
+
+    await expect(Effect.runPromise(client.getPullRequestDiff(ref))).resolves.toBe(
+      "diff --git a/a.ts b/a.ts",
+    );
+    await expect(Effect.runPromise(client.approvePullRequest(ref))).resolves.toBeUndefined();
+    await expect(Effect.runPromise(client.requestChanges(ref))).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(client.addGeneralComment(ref, "Overall comment")),
+    ).resolves.toBeUndefined();
+    await expect(
+      Effect.runPromise(
+        client.addInlineComment(ref, "Inline comment", {
+          path: "src/a.ts",
+          line: 3,
+          side: "new",
+        }),
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(requests).toEqual([
+      {
+        method: "GET",
+        url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/diff",
+        body: null,
+      },
+      {
+        method: "POST",
+        url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/approve",
+        body: null,
+      },
+      {
+        method: "POST",
+        url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/request-changes",
+        body: null,
+      },
+      {
+        method: "POST",
+        url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/comments",
+        body: JSON.stringify({ content: { raw: "Overall comment" } }),
+      },
+      {
+        method: "POST",
+        url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/comments",
+        body: JSON.stringify({
+          content: { raw: "Inline comment" },
+          inline: { path: "src/a.ts", to: 3 },
+        }),
+      },
+    ]);
+    expect(client.capabilities.canWriteReviews).toBe(true);
+  });
+
+  it("redacts response bodies from failed review actions", async () => {
+    const fetcher = vi.fn(async () => new Response("secret-token=must-not-leak", { status: 500 }));
+    const client = makeBitbucketClient(credentials, fetcher);
+    const result = await Effect.runPromise(
+      Effect.either(
+        client.addGeneralComment(
+          { repository: { workspace: "acme", slug: "review" }, id: 7 },
+          "Overall comment",
+        ),
+      ),
+    );
+
+    expect(result._tag).toBe("Left");
+    expect(JSON.stringify(result)).not.toContain("secret-token");
+    expect(JSON.stringify(result)).not.toContain("synthetic-token");
   });
 
   it("follows an opaque next link without reconstructing pagination query state", async () => {

@@ -97,6 +97,8 @@ export interface PullRequestPage {
 }
 
 const SlugDto = Schema.Struct({ slug: Schema.String.pipe(Schema.filter((value) => value !== "")) });
+const WorkspaceMembershipDto = Schema.Struct({ workspace: SlugDto });
+const WorkspaceDto = Schema.Union(WorkspaceMembershipDto, SlugDto);
 
 export interface WorkspacePage {
   readonly values: ReadonlyArray<string>;
@@ -104,8 +106,13 @@ export interface WorkspacePage {
 }
 
 export const decodeWorkspacePage = (input: unknown): Effect.Effect<WorkspacePage, ProviderError> =>
-  decode(PageDto(SlugDto), input, decodeError("workspace discovery", "/user/workspaces")).pipe(
-    Effect.map((page) => ({ ...page, values: page.values.map((value) => value.slug) })),
+  decode(PageDto(WorkspaceDto), input, decodeError("workspace discovery", "/user/workspaces")).pipe(
+    Effect.map((page) => ({
+      ...page,
+      values: page.values.map((value) =>
+        "workspace" in value ? value.workspace.slug : value.slug,
+      ),
+    })),
   );
 
 export interface RepositoryPage {

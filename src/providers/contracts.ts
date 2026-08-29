@@ -41,6 +41,12 @@ export interface PullRequestRef {
   readonly id: number;
 }
 
+export interface InlineCommentAnchor {
+  readonly path: string;
+  readonly line: number;
+  readonly side: "new" | "old";
+}
+
 export type PullRequestState = "OPEN" | "MERGED" | "DECLINED" | "SUPERSEDED" | "UNKNOWN";
 
 export interface PullRequestSummary {
@@ -84,4 +90,18 @@ export interface CodeReviewProvider {
   readonly getReviewSignals: (
     pullRequest: PullRequestRef,
   ) => Effect.Effect<ReadonlyArray<ReviewSignal>, ProviderError>;
+  readonly getPullRequestDiff: (
+    pullRequest: PullRequestRef,
+  ) => Effect.Effect<string, ProviderError>;
+  readonly approvePullRequest: (pullRequest: PullRequestRef) => Effect.Effect<void, ProviderError>;
+  readonly requestChanges: (pullRequest: PullRequestRef) => Effect.Effect<void, ProviderError>;
+  readonly addGeneralComment: (
+    pullRequest: PullRequestRef,
+    text: string,
+  ) => Effect.Effect<void, ProviderError>;
+  readonly addInlineComment: (
+    pullRequest: PullRequestRef,
+    text: string,
+    anchor: InlineCommentAnchor,
+  ) => Effect.Effect<void, ProviderError>;
 }

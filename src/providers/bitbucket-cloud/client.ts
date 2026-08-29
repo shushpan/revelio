@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type {
   CodeReviewProvider,
+  InlineCommentAnchor,
   PullRequestRef,
   PullRequestSummary,
   ProviderUser,
@@ -12,7 +13,12 @@ import type { ProviderError } from "../errors";
 import { decodeError } from "../errors";
 import type { BitbucketCredentials } from "./auth";
 import { mapBitbucketHttpError } from "./http-error";
-import { buildBitbucketRequest, buildBitbucketRequestForUrl, BITBUCKET_API_BASE } from "./request";
+import {
+  buildBitbucketMutationRequest,
+  buildBitbucketRequest,
+  buildBitbucketRequestForUrl,
+  BITBUCKET_API_BASE,
+} from "./request";
 import {
   decodeActivityPage,
   decodePullRequestPage,
@@ -23,19 +29,25 @@ import {
 } from "./schemas";
 
 type FetchImplementation = (request: Request) => Promise<Response>;
+type RequestBuilder = (
+  path: string,
+  credentials: BitbucketCredentials,
+  options: { readonly signal?: AbortSignal },
+) => Request;
 
 export interface BitbucketClientOptions {
   readonly signal?: AbortSignal;
 }
 
-const requestJson = (
+const requestResponse = (
   path: string,
   operation: string,
   endpoint: string,
   credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation,
+  buildRequest: RequestBuilder,
   signal?: AbortSignal,
-): Effect.Effect<unknown, ProviderError> =>
+): Effect.Effect<Response, ProviderError> =>
   Effect.gen(function* () {
     if (signal?.aborted) {
       return yield* Effect.fail({
@@ -46,12 +58,7 @@ const requestJson = (
       } as const);
     }
     const response = yield* Effect.tryPromise({
-      try: () =>
-        fetchImplementation(
-          path.startsWith("/")
-            ? buildBitbucketRequest(path, credentials, { signal })
-            : buildBitbucketRequestForUrl(path, credentials, { signal }),
-        ),
+      try: () => fetchImplementation(buildRequest(path, credentials, { signal })),
       catch: () =>
         ({
           _tag: "NetworkError",
@@ -72,11 +79,78 @@ const requestJson = (
       );
     }
 
-    return yield* Effect.tryPromise({
-      try: () => response.json() as Promise<unknown>,
-      catch: () => decodeError(operation, endpoint),
-    });
+    return response;
   });
+
+const requestJson = (
+  path: string,
+  operation: string,
+  endpoint: string,
+  credentials: BitbucketCredentials,
+  fetchImplementation: FetchImplementation,
+  signal?: AbortSignal,
+): Effect.Effect<unknown, ProviderError> =>
+  requestResponse(
+    path,
+    operation,
+    endpoint,
+    credentials,
+    fetchImplementation,
+    path.startsWith("/") ? buildBitbucketRequest : buildBitbucketRequestForUrl,
+    signal,
+  ).pipe(
+    Effect.flatMap((response) =>
+      Effect.tryPromise({
+        try: () => response.json() as Promise<unknown>,
+        catch: () => decodeError(operation, endpoint),
+      }),
+    ),
+  );
+
+const requestText = (
+  path: string,
+  operation: string,
+  endpoint: string,
+  credentials: BitbucketCredentials,
+  fetchImplementation: FetchImplementation,
+  signal?: AbortSignal,
+): Effect.Effect<string, ProviderError> =>
+  requestResponse(
+    path,
+    operation,
+    endpoint,
+    credentials,
+    fetchImplementation,
+    buildBitbucketRequest,
+    signal,
+  ).pipe(
+    Effect.flatMap((response) =>
+      Effect.tryPromise({
+        try: () => response.text(),
+        catch: () => decodeError(operation, endpoint),
+      }),
+    ),
+  );
+
+const requestMutation = (
+  path: string,
+  operation: string,
+  endpoint: string,
+  credentials: BitbucketCredentials,
+  fetchImplementation: FetchImplementation,
+  body: unknown,
+  signal?: AbortSignal,
+): Effect.Effect<void, ProviderError> =>
+  requestResponse(
+    path,
+    operation,
+    endpoint,
+    credentials,
+    fetchImplementation,
+    (requestPath, requestCredentials, options) =>
+      buildBitbucketMutationRequest(requestPath, requestCredentials, body, options),
+    signal,
+  ).pipe(Effect.asVoid);
 
 type PageResult<A> = {
   readonly values: ReadonlyArray<A>;
@@ -150,6 +224,9 @@ const collectPages = <A>(
 
 const repositoryPath = (repository: RepositoryRef): string =>
   `/repositories/${encodeURIComponent(repository.workspace)}/${encodeURIComponent(repository.slug)}`;
+
+const pullRequestPath = (pullRequest: PullRequestRef): string =>
+  `${repositoryPath(pullRequest.repository)}/pullrequests/${encodeURIComponent(String(pullRequest.id))}`;
 
 export const makeBitbucketClient = (
   credentials: BitbucketCredentials,
@@ -253,16 +330,88 @@ export const makeBitbucketClient = (
       },
     );
 
+  const getPullRequestDiff = (pullRequest: PullRequestRef): Effect.Effect<string, ProviderError> =>
+    requestText(
+      `${pullRequestPath(pullRequest)}/diff`,
+      "pull request diff",
+      "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/diff",
+      credentials,
+      fetchImplementation,
+      options.signal,
+    );
+
+  const approvePullRequest = (pullRequest: PullRequestRef): Effect.Effect<void, ProviderError> =>
+    requestMutation(
+      `${pullRequestPath(pullRequest)}/approve`,
+      "approve pull request",
+      "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/approve",
+      credentials,
+      fetchImplementation,
+      undefined,
+      options.signal,
+    );
+
+  const requestChanges = (pullRequest: PullRequestRef): Effect.Effect<void, ProviderError> =>
+    requestMutation(
+      `${pullRequestPath(pullRequest)}/request-changes`,
+      "request changes",
+      "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/request-changes",
+      credentials,
+      fetchImplementation,
+      undefined,
+      options.signal,
+    );
+
+  const addGeneralComment = (
+    pullRequest: PullRequestRef,
+    text: string,
+  ): Effect.Effect<void, ProviderError> =>
+    requestMutation(
+      `${pullRequestPath(pullRequest)}/comments`,
+      "general comment",
+      "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/comments",
+      credentials,
+      fetchImplementation,
+      { content: { raw: text } },
+      options.signal,
+    );
+
+  const addInlineComment = (
+    pullRequest: PullRequestRef,
+    text: string,
+    anchor: InlineCommentAnchor,
+  ): Effect.Effect<void, ProviderError> =>
+    requestMutation(
+      `${pullRequestPath(pullRequest)}/comments`,
+      "inline comment",
+      "/repositories/{workspace}/{repository}/pullrequests/{pull_request}/comments",
+      credentials,
+      fetchImplementation,
+      {
+        content: { raw: text },
+        inline:
+          anchor.side === "old"
+            ? { path: anchor.path, from: anchor.line }
+            : { path: anchor.path, to: anchor.line },
+      },
+      options.signal,
+    );
+
   return {
     id: "bitbucket-cloud",
     capabilities: {
       canReadPullRequests: true,
       canReadReviewSignals: true,
-      canWriteReviews: false,
+      canWriteReviews: true,
     },
     getCurrentUser,
     discoverRepositories,
     listOpenPullRequests,
     getReviewSignals,
+    getPullRequestDiff,
+    approvePullRequest,
+    requestChanges,
+    addGeneralComment,
+    addInlineComment,
   };
 };

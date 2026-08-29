@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import activityPage from "./__fixtures__/activity-page.json";
 import pullRequestPage from "./__fixtures__/pull-request-page.json";
 import user from "./__fixtures__/user.json";
-import { decodeActivityPage, decodePullRequestPage, decodeUser } from "./schemas";
+import {
+  decodeActivityPage,
+  decodePullRequestPage,
+  decodeUser,
+  decodeWorkspacePage,
+} from "./schemas";
 
 describe("Bitbucket response schemas", () => {
   it("decodes a valid user fixture into the normalized identity", () => {
@@ -36,6 +41,12 @@ describe("Bitbucket response schemas", () => {
     );
     expect(result.values).toHaveLength(1);
     expect(result.values[0]?.id).toBe(7);
+  });
+
+  it("decodes documented workspace membership entries", () => {
+    expect(
+      Effect.runSync(decodeWorkspacePage({ values: [{ workspace: { slug: "acme" } }] })),
+    ).toEqual({ values: ["acme"] });
   });
 
   it("decodes documented approval, request-change, comment, update, and unknown events", () => {
