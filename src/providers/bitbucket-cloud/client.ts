@@ -121,7 +121,11 @@ const requestText = (
     endpoint,
     credentials,
     fetchImplementation,
-    buildBitbucketRequest,
+    (requestPath, requestCredentials, requestOptions) => {
+      const request = buildBitbucketRequest(requestPath, requestCredentials, requestOptions);
+      request.headers.set("Accept", "text/plain");
+      return request;
+    },
     signal,
   ).pipe(
     Effect.flatMap((response) =>

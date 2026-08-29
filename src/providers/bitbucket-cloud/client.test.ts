@@ -66,12 +66,18 @@ describe("Bitbucket read client", () => {
   });
 
   it("fetches diffs and sends review actions with exact Bitbucket requests", async () => {
-    const requests: Array<{ method: string; url: string; body: string | null }> = [];
+    const requests: Array<{
+      method: string;
+      url: string;
+      body: string | null;
+      accept: string | null;
+    }> = [];
     const fetcher = vi.fn(async (request: Request) => {
       requests.push({
         method: request.method,
         url: request.url,
         body: request.body === null ? null : await request.clone().text(),
+        accept: request.headers.get("Accept"),
       });
       if (request.url.endsWith("/diff"))
         return new Response("diff --git a/a.ts b/a.ts", { status: 200 });
@@ -103,21 +109,25 @@ describe("Bitbucket read client", () => {
         method: "GET",
         url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/diff",
         body: null,
+        accept: "text/plain",
       },
       {
         method: "POST",
         url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/approve",
         body: null,
+        accept: "application/json",
       },
       {
         method: "POST",
         url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/request-changes",
         body: null,
+        accept: "application/json",
       },
       {
         method: "POST",
         url: "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/comments",
         body: JSON.stringify({ content: { raw: "Overall comment" } }),
+        accept: "application/json",
       },
       {
         method: "POST",
@@ -126,6 +136,7 @@ describe("Bitbucket read client", () => {
           content: { raw: "Inline comment" },
           inline: { path: "src/a.ts", to: 3 },
         }),
+        accept: "application/json",
       },
     ]);
     expect(client.capabilities.canWriteReviews).toBe(true);

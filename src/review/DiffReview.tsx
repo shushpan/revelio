@@ -172,7 +172,7 @@ export function DiffReview({
         </>
       ) : (
         <p className="review-status" role="status">
-          {error ?? "Preparing synthetic review patch…"}
+          {error ?? "Preparing review patch…"}
         </p>
       )}
     </section>

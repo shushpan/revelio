@@ -22,11 +22,14 @@ describe("Revelio shell", () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it("shows the product name and Phase 0 readiness", () => {
+  it("starts with the connection screen and no diagnostics harness", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Revelio" })).toBeInTheDocument();
     expect(screen.queryByText(/fast\s+review/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Phase 0 readiness")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connect to Bitbucket Cloud" })).toBeInTheDocument();
+    expect(screen.queryByText(/phase\s*0/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/diagnostics/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/open diff demo/i)).not.toBeInTheDocument();
   });
 });
