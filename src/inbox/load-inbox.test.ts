@@ -57,4 +57,24 @@ describe("loadInbox", () => {
       failures: [{ repository: badRepository, errorTag: "Forbidden" }],
     });
   });
+
+  it("includes sanitized discovery failures alongside successful pull requests", async () => {
+    await expect(
+      Effect.runPromise(
+        loadInbox(
+          provider({
+            discoverRepositories: () =>
+              Effect.succeed({
+                workspaces: ["acme"],
+                repositories: [goodRepository],
+                failures: [{ errorTag: "Forbidden" }],
+              }),
+          }),
+        ),
+      ),
+    ).resolves.toEqual({
+      pullRequests: [pullRequest],
+      failures: [{ errorTag: "Forbidden" }],
+    });
+  });
 });

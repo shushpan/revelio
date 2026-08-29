@@ -3,7 +3,7 @@ import type { CodeReviewProvider, PullRequestSummary, RepositoryRef } from "../p
 import type { ProviderError } from "../providers/errors";
 
 export interface InboxLoadFailure {
-  readonly repository: RepositoryRef;
+  readonly repository?: RepositoryRef;
   readonly errorTag: ProviderError["_tag"];
 }
 
@@ -18,7 +18,7 @@ export const loadInbox = (
   Effect.gen(function* () {
     const discovery = yield* provider.discoverRepositories();
     const pullRequests: PullRequestSummary[] = [];
-    const failures: InboxLoadFailure[] = [];
+    const failures: InboxLoadFailure[] = [...discovery.failures];
 
     for (const repository of discovery.repositories) {
       const result = yield* Effect.either(provider.listOpenPullRequests(repository));

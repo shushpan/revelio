@@ -14,7 +14,11 @@ const ReviewScreen = lazy(() =>
 
 type AppState =
   | { readonly screen: "connect" }
-  | ({ readonly screen: "inbox"; readonly inbox: InboxLoadResult } & Session)
+  | ({
+      readonly screen: "inbox";
+      readonly inbox: InboxLoadResult;
+      readonly refreshError?: string;
+    } & Session)
   | ({
       readonly screen: "review";
       readonly pullRequest: PullRequestSummary;
@@ -58,12 +62,20 @@ export function App(): JSX.Element {
 
   const refresh = (): void => {
     if (appState.screen !== "inbox") return;
-    void Promise.all([import("effect"), import("../inbox/load-inbox")])
-      .then(([{ Effect }, { loadInbox }]) => Effect.runPromise(loadInbox(appState.provider)))
+    void Promise.all([import("effect/Effect"), import("../inbox/load-inbox")])
+      .then(([Effect, { loadInbox }]) => Effect.runPromise(loadInbox(appState.provider)))
       .then((inbox) => {
-        setAppState((current) => (current.screen === "inbox" ? { ...current, inbox } : current));
+        setAppState((current) =>
+          current.screen === "inbox" ? { ...current, inbox, refreshError: undefined } : current,
+        );
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setAppState((current) =>
+          current.screen === "inbox"
+            ? { ...current, refreshError: "Unable to refresh pull requests right now." }
+            : current,
+        );
+      });
   };
 
   return (
@@ -81,6 +93,7 @@ export function App(): JSX.Element {
           user={appState.user}
           pullRequests={appState.inbox.pullRequests}
           failures={appState.inbox.failures}
+          warning={appState.refreshError}
           reviewed={reviewed}
           onSelect={(pullRequest) =>
             setAppState({ ...appState, screen: "review", pullRequest, inbox: appState.inbox })

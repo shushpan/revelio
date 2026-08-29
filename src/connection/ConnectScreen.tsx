@@ -35,11 +35,11 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
     setStatus("loading");
     setError(null);
     void Promise.all([
-      import("effect"),
+      import("effect/Effect"),
       import("../providers/bitbucket-cloud/client"),
       import("../inbox/load-inbox"),
     ])
-      .then(([{ Effect }, { makeBitbucketClient }, { loadInbox }]) => {
+      .then(([Effect, { makeBitbucketClient }, { loadInbox }]) => {
         const provider = makeBitbucketClient(credentials);
         return Effect.runPromise(
           Effect.gen(function* () {

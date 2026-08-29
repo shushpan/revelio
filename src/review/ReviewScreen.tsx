@@ -32,25 +32,35 @@ export function ReviewScreen({
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
     setPatch(null);
     setLoadingError(null);
     void Effect.runPromise(provider.getPullRequestDiff(pullRequest.ref))
-      .then(setPatch)
+      .then((nextPatch) => {
+        if (active) setPatch(nextPatch);
+      })
       .catch(() => {
-        if (!controller.signal.aborted) setLoadingError("Unable to load this pull request diff.");
+        if (active) setLoadingError("Unable to load this pull request diff.");
       });
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, [provider, pullRequest]);
 
-  const runAction = (name: string, operation: Effect.Effect<void, unknown>): void => {
+  const runAction = (
+    name: string,
+    operation: Effect.Effect<void, unknown>,
+    checkpoint = false,
+    onSuccess?: () => void,
+  ): void => {
     setAction(name);
     setNotice(null);
     void Effect.runPromise(operation)
       .then(() => {
         setAction(null);
         setNotice(`${name} sent.`);
-        onMarkReviewed(pullRequest);
+        if (checkpoint) onMarkReviewed(pullRequest);
+        onSuccess?.();
       })
       .catch(() => {
         setAction(null);
@@ -62,12 +72,21 @@ export function ReviewScreen({
     const text = comment.trim();
     if (text === "") return;
     if (inlineIntent) {
-      runAction("Inline comment", provider.addInlineComment(pullRequest.ref, text, inlineIntent));
+      runAction(
+        "Inline comment",
+        provider.addInlineComment(pullRequest.ref, text, inlineIntent),
+        false,
+        () => {
+          setComment("");
+          setInlineIntent(null);
+        },
+      );
     } else {
-      runAction("Comment", provider.addGeneralComment(pullRequest.ref, text));
+      runAction("Comment", provider.addGeneralComment(pullRequest.ref, text), false, () => {
+        setComment("");
+        setInlineIntent(null);
+      });
     }
-    setComment("");
-    setInlineIntent(null);
   };
 
   return (
@@ -89,14 +108,16 @@ export function ReviewScreen({
           <Button
             variant="secondary"
             isDisabled={action !== null}
-            onPress={() => runAction("Approve", provider.approvePullRequest(pullRequest.ref))}
+            onPress={() => runAction("Approve", provider.approvePullRequest(pullRequest.ref), true)}
           >
             Approve
           </Button>
           <Button
             variant="secondary"
             isDisabled={action !== null}
-            onPress={() => runAction("Request changes", provider.requestChanges(pullRequest.ref))}
+            onPress={() =>
+              runAction("Request changes", provider.requestChanges(pullRequest.ref), true)
+            }
           >
             Request changes
           </Button>

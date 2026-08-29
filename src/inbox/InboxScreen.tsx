@@ -9,6 +9,7 @@ export interface InboxScreenProps {
   readonly user: ProviderUser;
   readonly pullRequests: ReadonlyArray<PullRequestSummary>;
   readonly failures: ReadonlyArray<InboxLoadFailure>;
+  readonly warning?: string;
   readonly reviewed: Readonly<Record<string, string>>;
   readonly onSelect: (pullRequest: PullRequestSummary) => void;
   readonly onRefresh: () => void;
@@ -22,6 +23,7 @@ export function InboxScreen({
   user,
   pullRequests,
   failures,
+  warning,
   reviewed,
   onSelect,
   onRefresh,
@@ -73,9 +75,10 @@ export function InboxScreen({
           All open
         </Button>
       </fieldset>
-      {failures.length > 0 ? (
+      {warning || failures.length > 0 ? (
         <p className="inbox-warning" role="status">
-          Some repositories could not be loaded. Successful repositories remain available.
+          {warning ??
+            "Some repositories could not be loaded. Successful repositories remain available."}
         </p>
       ) : null}
       <ul className="inbox-list">
