@@ -162,7 +162,7 @@ const firstWorkspace = (body: unknown): string | undefined => {
     endpointTemplates["workspace-visibility"],
   )[0];
   if (!value) return undefined;
-  const slug = firstString(value, ["slug", "username", "name"]);
+  const slug = firstString(value, ["slug"]);
   if (!slug) throw new Error("workspace is unavailable");
   return slug;
 };
@@ -178,7 +178,7 @@ const firstRepository = (
   )[0];
   if (!value) return undefined;
   if (!isRecord(value)) throw new Error("repository is unavailable");
-  const repository = firstString(value, ["slug", "name"]);
+  const repository = firstString(value, ["slug"]);
   if (!repository) throw new Error("repository is unavailable");
   return { workspace, repository };
 };

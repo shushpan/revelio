@@ -210,6 +210,49 @@ describe("Bitbucket diagnostics workflow", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects workspace discovery entries without a slug", async () => {
+    const fetcher = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/2.0/user") return response(diagnosticFixtures.user);
+      if (path === "/2.0/user/workspaces") return response({ values: [{ username: "acme" }] });
+      throw new Error(`unexpected dependent request: ${path}`);
+    });
+
+    const result = await Effect.runPromise(
+      runBitbucketDiagnostics(credentials, { fetch: fetcher }),
+    );
+
+    expect(result.capabilities["workspace-visibility"]).toEqual({
+      capability: "workspace-visibility",
+      status: "failed",
+      errorTag: "DecodeError",
+    });
+    expect(result.capabilities["repository-visibility"].status).toBe("unavailable");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects repository discovery entries without a slug", async () => {
+    const fetcher = vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/2.0/user") return response(diagnosticFixtures.user);
+      if (path === "/2.0/user/workspaces") return response(diagnosticFixtures.workspaces);
+      if (path === "/2.0/repositories/acme") return response({ values: [{ name: "review" }] });
+      throw new Error(`unexpected dependent request: ${path}`);
+    });
+
+    const result = await Effect.runPromise(
+      runBitbucketDiagnostics(credentials, { fetch: fetcher }),
+    );
+
+    expect(result.capabilities["repository-visibility"]).toEqual({
+      capability: "repository-visibility",
+      status: "failed",
+      errorTag: "DecodeError",
+    });
+    expect(result.capabilities["open-pr-list"].status).toBe("unavailable");
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
   it("percent-encodes a workspace slug before repository discovery", async () => {
     const requestedPaths: string[] = [];
     const fetcher = vi.fn(async (request: Request) => {

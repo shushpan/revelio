@@ -110,11 +110,7 @@ test.describe("invalid-token diagnostics", () => {
     await page.route("https://api.bitbucket.org/**", async (route: Route) => {
       const url = assertReadOnlyRequest(route);
       const fullPath = `${url.pathname}${url.search}`;
-      expect([
-        "/2.0/user",
-        "/2.0/workspaces?pagelen=1",
-        "/2.0/repositories?role=member&pagelen=1",
-      ]).toContain(fullPath);
+      expect(["/2.0/user", "/2.0/user/workspaces?pagelen=1"]).toContain(fullPath);
       observedPaths.push(fullPath);
       await route.fulfill({ status: 401, json: { secret: "synthetic response body" } });
     });
@@ -125,11 +121,7 @@ test.describe("invalid-token diagnostics", () => {
     await expect(
       page.locator(".result-failed").filter({ hasText: "Unauthorized" }).first(),
     ).toBeVisible();
-    expect(observedPaths).toEqual([
-      "/2.0/user",
-      "/2.0/workspaces?pagelen=1",
-      "/2.0/repositories?role=member&pagelen=1",
-    ]);
+    expect(observedPaths).toEqual(["/2.0/user", "/2.0/user/workspaces?pagelen=1"]);
     await expect(page.locator("body")).not.toContainText("synthetic response body");
     await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
   });
@@ -148,7 +140,7 @@ test.describe("missing-scope diagnostics", () => {
         await route.fulfill({ json: { uuid: "{user-uuid}", display_name: "Synthetic Reviewer" } });
         return;
       }
-      if (path === "/2.0/user/workspaces" || path === "/2.0/repositories/acme") {
+      if (path === "/2.0/user/workspaces") {
         await route.fulfill({ status: 403, json: { secret: "synthetic response body" } });
         return;
       }
@@ -161,11 +153,7 @@ test.describe("missing-scope diagnostics", () => {
     await expect(
       page.locator(".result-failed").filter({ hasText: "Forbidden" }).first(),
     ).toBeVisible();
-    expect(observedPaths).toEqual([
-      "/2.0/user",
-      "/2.0/user/workspaces?pagelen=1",
-      "/2.0/repositories/acme?pagelen=1",
-    ]);
+    expect(observedPaths).toEqual(["/2.0/user", "/2.0/user/workspaces?pagelen=1"]);
     await expect(page.locator("body")).not.toContainText("synthetic response body");
     await expect(page.locator("body")).not.toContainText(syntheticCredentials.token);
   });
