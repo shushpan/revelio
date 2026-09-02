@@ -97,6 +97,54 @@ describe("InboxScreen", () => {
     expect(screen.getByText("PR for repo-a")).toBeInTheDocument();
   });
 
+  it("filters rows by the query text field", () => {
+    renderInbox({
+      pullRequests: [
+        pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+        pullRequestFor("repo-b", "2026-08-28T10:00:00Z"),
+      ],
+      totalRepositories: 2,
+      completedRepositories: 2,
+      isComplete: true,
+    });
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "repo:repo-a" } });
+
+    expect(screen.getByText("PR for repo-a")).toBeInTheDocument();
+    expect(screen.queryByText("PR for repo-b")).not.toBeInTheDocument();
+  });
+
+  it("shows matching of total actionable counts when narrowed", () => {
+    renderInbox({
+      pullRequests: [
+        pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+        pullRequestFor("repo-b", "2026-08-28T10:00:00Z"),
+      ],
+      totalRepositories: 2,
+      completedRepositories: 2,
+      isComplete: true,
+    });
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "repo:repo-a" } });
+
+    expect(screen.getByText(/Showing 1 of 2 actionable\./)).toBeInTheDocument();
+  });
+
+  it("toggles a quick filter term into and out of the query field", () => {
+    renderInbox();
+    const requested = screen.getByRole("button", { name: "Requested" });
+    const search = screen.getByRole("searchbox") as HTMLInputElement;
+
+    expect(requested).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(requested);
+    expect(search.value).not.toContain("reviewer:@me");
+    expect(requested).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(requested);
+    expect(search.value).toContain("reviewer:@me");
+  });
+
   it("calls onManageRepositories from the Manage repositories action", () => {
     const onManageRepositories = vi.fn();
     render(
