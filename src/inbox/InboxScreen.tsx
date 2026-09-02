@@ -4,6 +4,16 @@ import type { JSX } from "react";
 import { useMemo, useState } from "react";
 import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
 import type { InboxLoadSnapshot } from "./load-inbox";
+import { hasTerm, matchesQuery, parseQuery, pullRequestKey, toggleTerm } from "./query";
+
+export { pullRequestKey };
+
+const DEFAULT_QUERY = "reviewer:@me is:unreviewed";
+
+const QUICK_FILTERS: ReadonlyArray<{ readonly label: string; readonly term: string }> = [
+  { label: "Requested", term: "reviewer:@me" },
+  { label: "New commits", term: "is:unreviewed" },
+];
 
 export interface InboxScreenProps {
   readonly user: ProviderUser;
@@ -16,9 +26,6 @@ export interface InboxScreenProps {
   readonly onLock: () => void;
 }
 
-export const pullRequestKey = (pullRequest: PullRequestSummary): string =>
-  `${pullRequest.ref.repository.workspace}/${pullRequest.ref.repository.slug}#${pullRequest.ref.id}`;
-
 export function InboxScreen({
   user,
   inbox,
@@ -29,18 +36,22 @@ export function InboxScreen({
   onManageRepositories,
   onLock,
 }: InboxScreenProps): JSX.Element {
-  const [filter, setFilter] = useState<"needs-review" | "all-open">("needs-review");
+  const [query, setQuery] = useState(DEFAULT_QUERY);
   const { pullRequests, failures, totalRepositories, completedRepositories, isComplete } = inbox;
-  const visiblePullRequests = useMemo(
-    () =>
-      pullRequests.filter(
-        (pullRequest) =>
-          filter === "all-open" ||
-          (pullRequest.reviewerIds.includes(user.id) &&
-            reviewed[pullRequestKey(pullRequest)] !== pullRequest.sourceCommit),
-      ),
-    [filter, pullRequests, reviewed, user.id],
-  );
+  const reviewedKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const pullRequest of pullRequests) {
+      const key = pullRequestKey(pullRequest);
+      if (reviewed[key] === pullRequest.sourceCommit) keys.add(key);
+    }
+    return keys;
+  }, [pullRequests, reviewed]);
+  const visiblePullRequests = useMemo(() => {
+    const parsed = parseQuery(query);
+    const ctx = { currentUserId: user.id, reviewed: reviewedKeys };
+    return pullRequests.filter((pullRequest) => matchesQuery(pullRequest, parsed, ctx));
+  }, [pullRequests, query, reviewedKeys, user.id]);
+  const isNarrowed = query.trim().length > 0 && visiblePullRequests.length !== pullRequests.length;
   const canShowEmptyCopy = isComplete && failures.length === 0 && !refreshError;
 
   return (
@@ -63,26 +74,39 @@ export function InboxScreen({
           </Button>
         </div>
       </div>
-      <fieldset className="inbox-filters">
-        <legend className="sr-only">Pull request filter</legend>
-        <Button
-          variant={filter === "needs-review" ? "primary" : "secondary"}
-          aria-pressed={filter === "needs-review"}
-          onPress={() => setFilter("needs-review")}
-        >
-          Needs my review
-        </Button>
-        <Button
-          variant={filter === "all-open" ? "primary" : "secondary"}
-          aria-pressed={filter === "all-open"}
-          onPress={() => setFilter("all-open")}
-        >
-          All open
-        </Button>
-      </fieldset>
+      <div className="inbox-filters">
+        <label className="inbox-search">
+          <span className="sr-only">Filter pull requests</span>
+          <input
+            type="search"
+            className="inbox-search-input"
+            placeholder="Filter pull requests (e.g. reviewer:@me is:unreviewed)"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className="inbox-quick-filters">
+          {QUICK_FILTERS.map(({ label, term }) => {
+            const active = hasTerm(query, term);
+            return (
+              <Button
+                key={term}
+                variant={active ? "primary" : "secondary"}
+                aria-pressed={active}
+                onPress={() => setQuery((current) => toggleTerm(current, term))}
+              >
+                {label}
+              </Button>
+            );
+          })}
+        </div>
+      </div>
       <p className="inbox-copy" role="status">
         Loaded {completedRepositories} of {totalRepositories} repositories - {pullRequests.length}{" "}
         pull requests found.
+        {isNarrowed
+          ? ` Showing ${visiblePullRequests.length} of ${pullRequests.length} actionable.`
+          : ""}
       </p>
       {refreshError ? (
         <p className="inbox-warning" role="alert">
