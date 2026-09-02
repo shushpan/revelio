@@ -5,6 +5,7 @@ import {
   type CredentialPort,
   createNavigatorCredentialPort,
   enrollPasskey,
+  makeWebAuthnPrfPort,
 } from "./webauthn";
 
 const domainSeparatedInput = new TextEncoder().encode("revelio:v1:vault");
@@ -119,5 +120,26 @@ describe("authenticateWithPrf", () => {
     await expect(authenticateWithPrf(unavailablePort, credentialId)).rejects.toEqual(
       new Error(VAULT_UNLOCK_ERROR_MESSAGE),
     );
+  });
+});
+
+describe("makeWebAuthnPrfPort", () => {
+  it("enrolls a credential and immediately authenticates it to return PRF key material", async () => {
+    const rawId = new Uint8Array([3, 2, 1]);
+    const prfOutput = new Uint8Array(32).fill(5);
+    const create = vi.fn(async () => fakePublicKeyCredential(rawId, { prf: { enabled: true } }));
+    const get = vi.fn(async () =>
+      fakePublicKeyCredential(rawId, { prf: { results: { first: prfOutput.buffer } } }),
+    );
+    const port: CredentialPort = { create, get };
+
+    const result = await makeWebAuthnPrfPort(port, enrollmentOptions).enroll();
+
+    expect(Array.from(result.credentialId)).toEqual([3, 2, 1]);
+    expect(result.prfOutput).toEqual(prfOutput);
+    const calls = get.mock.calls as unknown as Array<[CredentialRequestOptions]>;
+    const requestedCredential = calls[0]?.[0].publicKey?.allowCredentials?.[0];
+    expect(requestedCredential).toBeDefined();
+    expect(Array.from(new Uint8Array(requestedCredential?.id as ArrayBuffer))).toEqual([3, 2, 1]);
   });
 });

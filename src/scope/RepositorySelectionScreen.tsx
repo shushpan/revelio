@@ -12,6 +12,8 @@ export interface RepositorySelectionScreenProps {
   readonly discovery: {
     readonly completed: number;
     readonly total: number;
+    readonly repositoryCount: number;
+    readonly failures: number;
     readonly isComplete: boolean;
   };
   readonly onSave: (scope: RepositoryScope) => void;
@@ -79,9 +81,14 @@ export function RepositorySelectionScreen({
       <h2>Select workspaces and repositories</h2>
       <p className="selection-progress" role="status">
         {discovery.isComplete
-          ? `Loaded ${discovery.total} repositories.`
-          : `Loading repositories ${discovery.completed} of ${discovery.total}`}
+          ? `Loaded ${discovery.repositoryCount} repositories from ${discovery.completed} workspaces.`
+          : `Loading repositories from workspace ${discovery.completed} of ${discovery.total}`}
       </p>
+      {discovery.failures > 0 ? (
+        <p className="inbox-warning" role="alert">
+          Some workspaces could not be loaded. You can still continue with the repositories shown.
+        </p>
+      ) : null}
       <fieldset className="selection-fieldset">
         <legend>Workspaces</legend>
         {workspaces.map((workspace) => (

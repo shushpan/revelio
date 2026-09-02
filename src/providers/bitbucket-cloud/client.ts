@@ -268,7 +268,7 @@ export const makeBitbucketClient = (
     Effect.gen(function* () {
       const workspaceSlugs = yield* collectPages(
         "workspace discovery",
-        "/user/workspaces?pagelen=1",
+        `/user/workspaces?pagelen=100&fields=${encodeURIComponent(workspaceFields)}`,
         "/user/workspaces",
         (path) =>
           requestJson(
@@ -287,7 +287,7 @@ export const makeBitbucketClient = (
         const pageResult = yield* Effect.either(
           collectPages(
             "repository discovery",
-            `/repositories/${encodeURIComponent(workspace)}?pagelen=1`,
+            `/repositories/${encodeURIComponent(workspace)}?pagelen=100&fields=${encodeURIComponent(repositoryFields)}`,
             `/repositories/${encodeURIComponent(workspace)}`,
             (path) =>
               requestJson(
@@ -353,7 +353,7 @@ export const makeBitbucketClient = (
   ): Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError> =>
     collectPages(
       "open pull requests",
-      `${repositoryPath(repository)}/pullrequests?state=OPEN&pagelen=100&fields=${encodeURIComponent(pullRequestFields)}`,
+      `${repositoryPath(repository)}/pullrequests?state=OPEN&pagelen=50&fields=${encodeURIComponent(pullRequestFields)}`,
       `${repositoryPath(repository)}/pullrequests`,
       (path) => {
         return requestJson(

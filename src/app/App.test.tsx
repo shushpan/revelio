@@ -2,12 +2,15 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CodeReviewProvider, ProviderUser, RepositoryRef } from "../providers/contracts";
+import type { ProviderError } from "../providers/errors";
 import { App } from "./App";
 
 interface FakeScope {
   readonly selectedWorkspaces: ReadonlyArray<string>;
   readonly selectedRepositories: ReadonlyArray<RepositoryRef>;
 }
+
+type FakeVaultMode = "setup" | "unlock";
 
 interface FakeSelectionProps {
   readonly workspaces: ReadonlyArray<string>;
@@ -16,10 +19,22 @@ interface FakeSelectionProps {
   readonly discovery: {
     readonly completed: number;
     readonly total: number;
+    readonly repositoryCount: number;
+    readonly failures: number;
     readonly isComplete: boolean;
   };
   readonly onSave: (scope: FakeScope) => void;
   readonly onCancel?: () => void;
+}
+
+interface FakeVaultScreenProps {
+  readonly mode: FakeVaultMode;
+  readonly status: "idle" | "loading" | "error";
+  readonly error?: string;
+  readonly onPasskey: () => void;
+  readonly onPassphrase: (passphrase: string) => void;
+  readonly onSessionOnly?: () => void;
+  readonly onReconnect?: () => void;
 }
 
 vi.mock("../scope/RepositorySelectionScreen", () => ({
@@ -35,13 +50,10 @@ vi.mock("../scope/RepositorySelectionScreen", () => ({
       <p>workspaces:{workspaces.join(",")}</p>
       <p>repositories:{repositories.length}</p>
       <p>
-        discovery:{discovery.completed}/{discovery.total}/
-        {discovery.isComplete ? "complete" : "pending"}
+        discovery:{discovery.completed}/{discovery.total}/{discovery.repositoryCount}/
+        {discovery.failures}/{discovery.isComplete ? "complete" : "pending"}
       </p>
-      <button
-        type="button"
-        onClick={() => onSave({ selectedWorkspaces: ["alpha"], selectedRepositories: [] })}
-      >
+      <button type="button" onClick={() => onSave(nextSavedScope)}>
         Save selection
       </button>
       {onCancel ? (
@@ -53,13 +65,89 @@ vi.mock("../scope/RepositorySelectionScreen", () => ({
   ),
 }));
 
+vi.mock("../vault/VaultScreen", () => ({
+  VaultScreen: ({
+    mode,
+    status,
+    error,
+    onPasskey,
+    onPassphrase,
+    onSessionOnly,
+    onReconnect,
+  }: FakeVaultScreenProps) => (
+    <div>
+      <p>{mode === "setup" ? "vault-setup-screen" : "unlock-revelio-screen"}</p>
+      <p>vault-status:{status}</p>
+      {error ? <p role="alert">{error}</p> : null}
+      <button type="button" onClick={onPasskey}>
+        {mode === "setup" ? "Use passkey" : "Unlock with passkey"}
+      </button>
+      <button type="button" onClick={() => onPassphrase("secret passphrase")}>
+        {mode === "setup" ? "Use passphrase" : "Unlock with passphrase"}
+      </button>
+      {onSessionOnly ? (
+        <button type="button" onClick={onSessionOnly}>
+          This session only
+        </button>
+      ) : null}
+      {onReconnect ? (
+        <button type="button" onClick={onReconnect}>
+          Use token instead
+        </button>
+      ) : null}
+    </div>
+  ),
+}));
+
 let activeProvider: CodeReviewProvider | null = null;
+let activeVault: {
+  enrollPasskey: ReturnType<typeof vi.fn>;
+  enrollPassphrase: ReturnType<typeof vi.fn>;
+  unlockPasskey: ReturnType<typeof vi.fn>;
+  unlockPassphrase: ReturnType<typeof vi.fn>;
+  resumeTrustedBrowser: ReturnType<typeof vi.fn>;
+  clearTrustedBrowser: ReturnType<typeof vi.fn>;
+  hasVault: ReturnType<typeof vi.fn>;
+} | null = null;
+let nextSavedScope: FakeScope = { selectedWorkspaces: ["alpha"], selectedRepositories: [] };
 
 vi.mock("../providers/bitbucket-cloud/client", () => ({
-  makeBitbucketClient: () => {
+  makeBitbucketClient: (
+    _credentials: unknown,
+    _fetchImplementation?: unknown,
+    options?: { readonly signal?: AbortSignal },
+  ) => {
     if (!activeProvider) throw new Error("no active provider configured for this test");
-    return activeProvider;
+    const provider = activeProvider;
+    const failWhenAborted = <A,>(effect: Effect.Effect<A, ProviderError>) =>
+      options?.signal?.aborted
+        ? Effect.fail({
+            _tag: "NetworkError" as const,
+            message: "Provider could not be reached",
+            operation: "aborted test request",
+            endpoint: "/test",
+          })
+        : effect;
+    return {
+      ...provider,
+      listRepositories: (workspace: string) =>
+        failWhenAborted(provider.listRepositories(workspace)),
+      listOpenPullRequests: (repository: RepositoryRef) =>
+        failWhenAborted(provider.listOpenPullRequests(repository)),
+    };
   },
+}));
+
+vi.mock("../vault/store", () => ({
+  makeVaultService: () => {
+    if (!activeVault) throw new Error("no active vault configured for this test");
+    return activeVault;
+  },
+}));
+
+vi.mock("../vault/webauthn", () => ({
+  createNavigatorCredentialPort: () => undefined,
+  makeWebAuthnPrfPort: () => ({}),
 }));
 
 const database: Record<"settings" | "vault", Map<IDBValidKey, unknown>> = {
@@ -89,6 +177,10 @@ const localStorageMock = {
 } as unknown as Storage;
 
 const user: ProviderUser = { id: "reviewer", displayName: "Reviewer" };
+const credentials = {
+  provider: "bitbucket-cloud" as const,
+  payload: { email: "reviewer@example.com", apiToken: "token" },
+};
 
 interface Deferred<A> {
   readonly promise: Promise<A>;
@@ -120,15 +212,34 @@ const buildProvider = (overrides: Partial<CodeReviewProvider> = {}): CodeReviewP
   ...overrides,
 });
 
+const buildVault = () => {
+  let hasVault = false;
+  return {
+    enrollPasskey: vi.fn(() => {
+      hasVault = true;
+      return Promise.resolve();
+    }),
+    enrollPassphrase: vi.fn(() => {
+      hasVault = true;
+      return Promise.resolve();
+    }),
+    unlockPasskey: vi.fn(() => Promise.resolve(credentials)),
+    unlockPassphrase: vi.fn(() => Promise.resolve(credentials)),
+    resumeTrustedBrowser: vi.fn(() => Promise.resolve(undefined)),
+    clearTrustedBrowser: vi.fn(() => Promise.resolve()),
+    hasVault: vi.fn(() => Promise.resolve(hasVault)),
+  };
+};
+
 const connectWith = async (provider: CodeReviewProvider): Promise<void> => {
   activeProvider = provider;
-  fireEvent.change(screen.getByLabelText("Atlassian email"), {
+  fireEvent.change(await screen.findByLabelText("Atlassian email"), {
     target: { value: "reviewer@example.com" },
   });
   fireEvent.change(screen.getByLabelText("Bitbucket API token"), {
     target: { value: "token" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
 };
 
 describe("Revelio shell", () => {
@@ -142,18 +253,22 @@ describe("Revelio shell", () => {
     database.settings.clear();
     database.vault.clear();
     activeProvider = null;
+    activeVault = buildVault();
+    nextSavedScope = { selectedWorkspaces: ["alpha"], selectedRepositories: [] };
   });
   afterEach(() => {
     vi.unstubAllGlobals();
     cleanup();
   });
 
-  it("starts with the connection screen and no diagnostics harness", () => {
+  it("starts with the connection screen and no diagnostics harness", async () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Revelio" })).toBeInTheDocument();
     expect(screen.queryByText(/fast\s+review/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Connect to Bitbucket Cloud" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Connect to Bitbucket Cloud" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/phase\s*0/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/diagnostics/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/open diff demo/i)).not.toBeInTheDocument();
@@ -165,12 +280,15 @@ describe("Revelio shell", () => {
 
     await waitFor(() => expect(screen.getByText("select-sources-screen")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("workspaces:alpha")).toBeInTheDocument());
-    await waitFor(() => expect(screen.getByText("discovery:1/1/complete")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("discovery:1/1/1/0/complete")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Save selection" }));
+    await waitFor(() => expect(screen.getByText("vault-setup-screen")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Use passphrase" }));
 
     await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
     expect(screen.queryByText("select-sources-screen")).not.toBeInTheDocument();
+    expect(activeVault?.enrollPassphrase).toHaveBeenCalledWith(credentials, "secret passphrase");
   });
 
   it("resumes directly to the inbox when a saved scope already exists for this identity", async () => {
@@ -195,12 +313,15 @@ describe("Revelio shell", () => {
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
     await waitFor(() => expect(screen.getByText("Existing PR")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Lock" }));
     cleanup();
+    activeVault = buildVault();
     render(<App />);
     await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
 
     expect(screen.queryByText("select-sources-screen")).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
@@ -228,6 +349,7 @@ describe("Revelio shell", () => {
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
     await waitFor(() => expect(screen.getByText("Row to keep")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Manage repositories" }));
@@ -267,6 +389,7 @@ describe("Revelio shell", () => {
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
     await waitFor(() =>
       expect(
         screen.getByText("Loaded 0 of 1 repositories - 0 pull requests found."),
@@ -309,9 +432,187 @@ describe("Revelio shell", () => {
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
     await waitFor(() => expect(screen.getByText("Row to remove")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(screen.queryByText("Row to remove")).not.toBeInTheDocument());
+  });
+
+  it("resumes from the trusted browser vault on reload before the seven-day expiry", async () => {
+    activeProvider = buildProvider();
+    activeVault = buildVault();
+    activeVault.hasVault.mockResolvedValue(true);
+    activeVault.resumeTrustedBrowser.mockResolvedValue(credentials);
+    database.settings.set("scope:bitbucket-cloud:reviewer", {
+      selectedWorkspaces: ["alpha"],
+      selectedRepositories: [],
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+    expect(screen.queryByText("Connect to Bitbucket Cloud")).not.toBeInTheDocument();
+    expect(activeVault.resumeTrustedBrowser).toHaveBeenCalledWith(expect.any(Number));
+  });
+
+  it("keeps refreshed providers usable after a trusted vault resume", async () => {
+    let callCount = 0;
+    activeProvider = buildProvider({
+      listOpenPullRequests: () => {
+        callCount += 1;
+        return Effect.succeed([
+          {
+            ref: { repository: { workspace: "alpha", slug: "one" }, id: callCount },
+            title: callCount === 1 ? "Restored row" : "Refresh after restore",
+            description: "",
+            state: "OPEN" as const,
+            updatedAt: "2026-08-29T10:00:00Z",
+            sourceBranch: "feature/review",
+            targetBranch: "main",
+            sourceCommit: "abc123",
+            author: { id: "author", displayName: "Author" },
+            reviewerIds: ["reviewer"],
+          },
+        ]);
+      },
+    });
+    activeVault = buildVault();
+    activeVault.hasVault.mockResolvedValue(true);
+    activeVault.resumeTrustedBrowser.mockResolvedValue(credentials);
+    database.settings.set("scope:bitbucket-cloud:reviewer", {
+      selectedWorkspaces: ["alpha"],
+      selectedRepositories: [],
+    });
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("Restored row")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(screen.getByText("Refresh after restore")).toBeInTheDocument());
+  });
+
+  it("shows Unlock Revelio when a saved vault exists but the trusted browser window has expired", async () => {
+    activeVault = buildVault();
+    activeVault.hasVault.mockResolvedValue(true);
+    activeVault.resumeTrustedBrowser.mockResolvedValue(undefined);
+
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
+    expect(screen.queryByText("Connect to Bitbucket Cloud")).not.toBeInTheDocument();
+  });
+
+  it("clears the trusted browser record and shows Unlock Revelio when locked", async () => {
+    render(<App />);
+    await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+
+    await waitFor(() => expect(activeVault?.clearTrustedBrowser).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
+  });
+
+  it("clears sensitive screen state immediately and fails closed when Lock cannot clear storage", async () => {
+    render(<App />);
+    await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+    activeVault?.clearTrustedBrowser.mockRejectedValue(new Error("indexeddb failed"));
+    activeVault?.hasVault.mockResolvedValue(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+
+    expect(screen.queryByText("Signed in as Reviewer")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText("The local vault could not be locked. Try Lock again."),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument();
+  });
+
+  it("does not keep old pull requests visible after switching to an empty workspace scope", async () => {
+    const provider = buildProvider({
+      listWorkspaces: () => Effect.succeed(["alpha", "beta"]),
+      listRepositories: (workspace) =>
+        Effect.succeed(workspace === "alpha" ? [{ workspace: "alpha", slug: "one" }] : []),
+      listOpenPullRequests: () =>
+        Effect.succeed([
+          {
+            ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+            title: "Old selected PR",
+            description: "",
+            state: "OPEN" as const,
+            updatedAt: "2026-08-29T10:00:00Z",
+            sourceBranch: "feature/review",
+            targetBranch: "main",
+            sourceCommit: "abc123",
+            author: { id: "author", displayName: "Author" },
+            reviewerIds: ["reviewer"],
+          },
+        ]),
+    });
+    render(<App />);
+    await connectWith(provider);
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Old selected PR")).toBeInTheDocument());
+
+    nextSavedScope = { selectedWorkspaces: ["beta"], selectedRepositories: [] };
+    fireEvent.click(screen.getByRole("button", { name: "Manage repositories" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+
+    await waitFor(() => expect(screen.queryByText("Old selected PR")).not.toBeInTheDocument());
+    expect(
+      screen.getByText("Loaded 0 of 0 repositories - 0 pull requests found."),
+    ).toBeInTheDocument();
+  });
+
+  it("allows reconnecting with a token when local vault unlock is unavailable", async () => {
+    activeVault = buildVault();
+    activeVault.hasVault.mockResolvedValue(true);
+    activeVault.resumeTrustedBrowser.mockResolvedValue(undefined);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Use token instead" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Connect to Bitbucket Cloud" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show empty copy when selected workspace discovery fails", async () => {
+    database.settings.set("scope:bitbucket-cloud:reviewer", {
+      selectedWorkspaces: ["alpha"],
+      selectedRepositories: [],
+    });
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listRepositories: () =>
+          Effect.fail({
+            _tag: "NetworkError" as const,
+            message: "Provider could not be reached",
+            operation: "repository discovery",
+            endpoint: "/repositories/{workspace}",
+          }),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "This session only" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Some selected workspaces could not be loaded. Results may be incomplete.",
+        ),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("No pull requests in this view.")).not.toBeInTheDocument();
   });
 });

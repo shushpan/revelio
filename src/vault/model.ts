@@ -2,6 +2,8 @@ import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 
 export const TRUSTED_BROWSER_TTL_MS = 604_800_000;
 
+export const MIN_VAULT_PASSPHRASE_LENGTH = 12;
+
 export const VAULT_UNLOCK_ERROR_MESSAGE = "Unable to unlock the local vault";
 
 export interface VaultService {

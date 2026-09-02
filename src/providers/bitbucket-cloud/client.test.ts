@@ -75,7 +75,7 @@ describe("Bitbucket read client", () => {
 
     expect(requests.map((request) => request.url)).toEqual([
       "https://api.bitbucket.org/2.0/user",
-      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=100&fields=${pullRequestFieldsQuery}`,
+      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=50&fields=${pullRequestFieldsQuery}`,
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?page=2",
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/activity?page=1",
     ]);
@@ -199,7 +199,7 @@ describe("Bitbucket read client", () => {
     ).resolves.toEqual([]);
 
     expect(requests).toEqual([
-      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=100&fields=${pullRequestFieldsQuery}`,
+      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=50&fields=${pullRequestFieldsQuery}`,
       opaqueNext,
     ]);
   });
@@ -210,19 +210,19 @@ describe("Bitbucket read client", () => {
     const repoNext = "https://api.bitbucket.org/2.0/repositories/acme?cursor=repo-opaque";
     const fetcher = vi.fn(async (request: Request) => {
       requests.push(request.url);
-      if (request.url.endsWith("/user/workspaces?pagelen=1"))
+      if (request.url.endsWith("/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug"))
         return new Response(JSON.stringify({ values: [{ slug: "zeta" }], next: workspaceNext }), {
           status: 200,
         });
       if (request.url === workspaceNext)
         return new Response(JSON.stringify({ values: [{ slug: "acme" }] }), { status: 200 });
-      if (request.url.endsWith("/repositories/acme?pagelen=1"))
+      if (request.url.endsWith("/repositories/acme?pagelen=100&fields=next%2Cvalues.slug"))
         return new Response(JSON.stringify({ values: [{ slug: "z-repo" }], next: repoNext }), {
           status: 200,
         });
       if (request.url === repoNext)
         return new Response(JSON.stringify({ values: [{ slug: "a-repo" }] }), { status: 200 });
-      if (request.url.endsWith("/repositories/zeta?pagelen=1"))
+      if (request.url.endsWith("/repositories/zeta?pagelen=100&fields=next%2Cvalues.slug"))
         return new Response(JSON.stringify({ values: [{ slug: "only-repo" }] }), { status: 200 });
       throw new Error(`unexpected request: ${request.url}`);
     });
@@ -238,11 +238,11 @@ describe("Bitbucket read client", () => {
       failures: [],
     });
     expect(requests).toEqual([
-      "https://api.bitbucket.org/2.0/user/workspaces?pagelen=1",
+      "https://api.bitbucket.org/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug",
       workspaceNext,
-      "https://api.bitbucket.org/2.0/repositories/acme?pagelen=1",
+      "https://api.bitbucket.org/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug",
       repoNext,
-      "https://api.bitbucket.org/2.0/repositories/zeta?pagelen=1",
+      "https://api.bitbucket.org/2.0/repositories/zeta?pagelen=100&fields=next%2Cvalues.slug",
     ]);
   });
 

@@ -19,7 +19,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={["alpha", "beta"]}
         repositories={[alphaOne, alphaTwo, betaThree]}
         initialScope={emptyScope}
-        discovery={{ completed: 3, total: 3, isComplete: true }}
+        discovery={{ completed: 3, total: 3, repositoryCount: 3, failures: 0, isComplete: true }}
         onSave={vi.fn()}
       />,
     );
@@ -34,7 +34,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={["alpha", "beta"]}
         repositories={[alphaOne, alphaTwo, betaThree]}
         initialScope={emptyScope}
-        discovery={{ completed: 3, total: 3, isComplete: true }}
+        discovery={{ completed: 3, total: 3, repositoryCount: 3, failures: 0, isComplete: true }}
         onSave={onSave}
       />,
     );
@@ -55,7 +55,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={["alpha", "beta"]}
         repositories={[alphaOne, alphaTwo, betaThree]}
         initialScope={emptyScope}
-        discovery={{ completed: 3, total: 3, isComplete: true }}
+        discovery={{ completed: 3, total: 3, repositoryCount: 3, failures: 0, isComplete: true }}
         onSave={onSave}
       />,
     );
@@ -75,12 +75,14 @@ describe("RepositorySelectionScreen", () => {
         workspaces={["alpha"]}
         repositories={[alphaOne]}
         initialScope={emptyScope}
-        discovery={{ completed: 100, total: 168, isComplete: false }}
+        discovery={{ completed: 1, total: 3, repositoryCount: 100, failures: 0, isComplete: false }}
         onSave={vi.fn()}
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading repositories 100 of 168");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Loading repositories from workspace 1 of 3",
+    );
   });
 
   it("preserves a checked repository selection as later repository pages arrive", () => {
@@ -90,7 +92,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={[]}
         repositories={[alphaOne]}
         initialScope={emptyScope}
-        discovery={{ completed: 1, total: 3, isComplete: false }}
+        discovery={{ completed: 1, total: 3, repositoryCount: 1, failures: 0, isComplete: false }}
         onSave={onSave}
       />,
     );
@@ -102,7 +104,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={[]}
         repositories={[alphaOne, alphaTwo, betaThree]}
         initialScope={emptyScope}
-        discovery={{ completed: 3, total: 3, isComplete: true }}
+        discovery={{ completed: 3, total: 3, repositoryCount: 3, failures: 0, isComplete: true }}
         onSave={onSave}
       />,
     );
@@ -123,7 +125,7 @@ describe("RepositorySelectionScreen", () => {
         workspaces={["alpha"]}
         repositories={[alphaOne]}
         initialScope={emptyScope}
-        discovery={{ completed: 1, total: 1, isComplete: true }}
+        discovery={{ completed: 1, total: 1, repositoryCount: 1, failures: 0, isComplete: true }}
         onSave={vi.fn()}
         onCancel={onCancel}
       />,

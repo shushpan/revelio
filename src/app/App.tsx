@@ -1,10 +1,11 @@
 import "../styles.css";
 import { useTheme } from "@heroui/react";
 import type { JSX } from "react";
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ConnectScreen } from "../connection/ConnectScreen";
 import { InboxScreen, pullRequestKey } from "../inbox/InboxScreen";
 import type { InboxLoadSnapshot } from "../inbox/load-inbox";
+import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 import type {
   CodeReviewProvider,
   ProviderUser,
@@ -22,6 +23,9 @@ const RepositorySelectionScreen = lazy(() =>
     default: screen,
   })),
 );
+const VaultScreen = lazy(() =>
+  import("../vault/VaultScreen").then(({ VaultScreen: screen }) => ({ default: screen })),
+);
 
 interface Session {
   readonly provider: CodeReviewProvider;
@@ -31,14 +35,33 @@ interface Session {
 interface DiscoveryProgress {
   readonly completed: number;
   readonly total: number;
+  readonly repositoryCount: number;
+  readonly failures: number;
   readonly isComplete: boolean;
 }
 
 type AppState =
+  | { readonly screen: "restoring" }
   | { readonly screen: "connect" }
+  | ({
+      readonly screen: "setup-vault";
+      readonly credentials: BitbucketCredentials;
+      readonly scope: RepositoryScope;
+      readonly repositories: ReadonlyArray<RepositoryRef>;
+      readonly status: "idle" | "loading" | "error";
+      readonly error?: string;
+      readonly refreshError?: string;
+      readonly previousInbox?: InboxLoadSnapshot;
+    } & Session)
+  | {
+      readonly screen: "unlock";
+      readonly status: "idle" | "loading" | "error";
+      readonly error?: string;
+    }
   | ({
       readonly screen: "select-sources";
       readonly mode: "first-run" | "manage";
+      readonly credentials?: BitbucketCredentials;
       readonly workspaces: ReadonlyArray<string>;
       readonly repositories: ReadonlyArray<RepositoryRef>;
       readonly initialScope: RepositoryScope;
@@ -58,8 +81,18 @@ type AppState =
     } & Session);
 
 const reviewedStorageKey = "revelio.reviewed";
+const lockoutStorageKey = "revelio.locked";
+const lockFailureMessage = "The local vault could not be locked. Try Lock again.";
 const emptyScope: RepositoryScope = { selectedWorkspaces: [], selectedRepositories: [] };
-const emptyDiscovery: DiscoveryProgress = { completed: 0, total: 0, isComplete: false };
+const emptyDiscovery: DiscoveryProgress = {
+  completed: 0,
+  total: 0,
+  repositoryCount: 0,
+  failures: 0,
+  isComplete: false,
+};
+const workspaceDiscoveryWarning =
+  "Some selected workspaces could not be loaded. Results may be incomplete.";
 const pendingInbox = (totalRepositories: number): InboxLoadSnapshot => ({
   pullRequests: [],
   failures: [],
@@ -79,6 +112,23 @@ const loadEngine = () =>
     loadInbox: inbox.loadInbox,
     makeScopeStore: scope.makeScopeStore,
     resolveRepositories: scope.resolveRepositories,
+    makeIndexedDbKeyValueStore: persistence.makeIndexedDbKeyValueStore,
+  }));
+
+const loadBitbucketClient = () =>
+  import("../providers/bitbucket-cloud/client").then(({ makeBitbucketClient }) => ({
+    makeBitbucketClient,
+  }));
+
+const loadVaultEngine = () =>
+  Promise.all([
+    import("../vault/store"),
+    import("../vault/webauthn"),
+    import("../persistence/indexed-db"),
+  ]).then(([store, webauthn, persistence]) => ({
+    makeVaultService: store.makeVaultService,
+    makeWebAuthnPrfPort: webauthn.makeWebAuthnPrfPort,
+    createNavigatorCredentialPort: webauthn.createNavigatorCredentialPort,
     makeIndexedDbKeyValueStore: persistence.makeIndexedDbKeyValueStore,
   }));
 
@@ -111,11 +161,16 @@ const mergeSnapshotWithPrevious = (
 const discoverRepositoriesForWorkspaces = async (
   provider: CodeReviewProvider,
   workspaces: ReadonlyArray<string>,
-  onProgress: (completed: number, repositories: ReadonlyArray<RepositoryRef>) => void,
+  onProgress: (
+    completed: number,
+    repositories: ReadonlyArray<RepositoryRef>,
+    failures: number,
+  ) => void,
   signal?: AbortSignal,
-): Promise<ReadonlyArray<RepositoryRef>> => {
+): Promise<{ readonly repositories: ReadonlyArray<RepositoryRef>; readonly failures: number }> => {
   const { Effect } = await loadEngine();
   const repositories: RepositoryRef[] = [];
+  let failures = 0;
   let completed = 0;
   const workerCount = Math.min(4, workspaces.length);
   let nextIndex = 0;
@@ -128,27 +183,31 @@ const discoverRepositoriesForWorkspaces = async (
           Effect.either(provider.listRepositories(workspaces[index])),
         );
         if (result._tag === "Right") repositories.push(...result.right);
+        else failures += 1;
         completed += 1;
-        onProgress(completed, [...repositories]);
+        onProgress(completed, [...repositories], failures);
       }
     }),
   );
-  return repositories;
+  return { repositories, failures };
 };
 
 const resolveScopeRepositories = async (
   provider: CodeReviewProvider,
   scope: RepositoryScope,
   signal?: AbortSignal,
-): Promise<ReadonlyArray<RepositoryRef>> => {
+): Promise<{ readonly repositories: ReadonlyArray<RepositoryRef>; readonly failures: number }> => {
   const { resolveRepositories } = await loadEngine();
   const discovered = await discoverRepositoriesForWorkspaces(
     provider,
     scope.selectedWorkspaces,
-    () => {},
+    () => undefined,
     signal,
   );
-  return resolveRepositories(scope, discovered);
+  return {
+    repositories: resolveRepositories(scope, discovered.repositories),
+    failures: discovered.failures,
+  };
 };
 
 const loadSavedScope = async (
@@ -176,8 +235,67 @@ const saveScopeToStore = async (
   }
 };
 
+const makeVaultServiceForUser = async (user?: ProviderUser, credentials?: BitbucketCredentials) => {
+  const {
+    makeVaultService,
+    makeWebAuthnPrfPort,
+    createNavigatorCredentialPort,
+    makeIndexedDbKeyValueStore,
+  } = await loadVaultEngine();
+  const enrollmentOptions =
+    user && credentials
+      ? {
+          rp: { name: "Revelio" },
+          user: {
+            id: new TextEncoder().encode(user.id).slice(0, 64),
+            name: credentials.payload.email,
+            displayName: user.displayName,
+          },
+        }
+      : undefined;
+  return makeVaultService(
+    makeIndexedDbKeyValueStore(),
+    makeWebAuthnPrfPort(createNavigatorCredentialPort(), enrollmentOptions),
+  );
+};
+
+const validateCredentials = async (
+  credentials: BitbucketCredentials,
+  signal?: AbortSignal,
+): Promise<Session> => {
+  const { Effect } = await loadEngine();
+  const { makeBitbucketClient } = await loadBitbucketClient();
+  const validationProvider = makeBitbucketClient(credentials, undefined, { signal });
+  const user = await Effect.runPromise(validationProvider.getCurrentUser);
+  return { provider: makeBitbucketClient(credentials), user };
+};
+
+const rememberLockedOut = (): void => {
+  try {
+    window.localStorage.setItem(lockoutStorageKey, "1");
+  } catch {
+    // Best effort: the vault remains the source of truth when localStorage is unavailable.
+  }
+};
+
+const forgetLockedOut = (): void => {
+  try {
+    window.localStorage.removeItem(lockoutStorageKey);
+  } catch {
+    // Best effort.
+  }
+};
+
+const readLockedOut = (): boolean => {
+  try {
+    return window.localStorage.getItem(lockoutStorageKey) === "1";
+  } catch {
+    return true;
+  }
+};
+
 export function App(): JSX.Element {
-  const [appState, setAppState] = useState<AppState>({ screen: "connect" });
+  const [appState, setAppState] = useState<AppState>({ screen: "restoring" });
   const [reviewed, setReviewed] = useState<Record<string, string>>(readReviewed);
   const { theme, resolvedTheme, setTheme } = useTheme("system");
   const selectedTheme: ThemeChoice = theme === "light" || theme === "dark" ? theme : "system";
@@ -194,6 +312,35 @@ export function App(): JSX.Element {
     return { runId: ++runIdRef.current, signal: controller.signal };
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: vault restore is a one-time app bootstrap.
+  useEffect(() => {
+    const run = beginRun();
+    void makeVaultServiceForUser()
+      .then(async (vault) => {
+        const hasVault = await vault.hasVault();
+        if (!hasVault) {
+          forgetLockedOut();
+          if (run.runId === runIdRef.current) setAppState({ screen: "connect" });
+          return;
+        }
+        if (readLockedOut()) {
+          if (run.runId === runIdRef.current) setAppState({ screen: "unlock", status: "idle" });
+          return;
+        }
+        const credentials = await vault.resumeTrustedBrowser(Date.now());
+        if (!credentials) {
+          if (run.runId === runIdRef.current) setAppState({ screen: "unlock", status: "idle" });
+          return;
+        }
+        const { provider, user } = await validateCredentials(credentials, run.signal);
+        if (run.runId !== runIdRef.current) return;
+        continueAuthenticated(credentials, provider, user, run, false);
+      })
+      .catch(() => {
+        if (run.runId === runIdRef.current) setAppState({ screen: "connect" });
+      });
+  }, []);
+
   const startSync = (
     provider: CodeReviewProvider,
     user: ProviderUser,
@@ -201,7 +348,14 @@ export function App(): JSX.Element {
     repositories: ReadonlyArray<RepositoryRef>,
     run: { runId: number; signal: AbortSignal },
     previousInbox?: InboxLoadSnapshot,
+    refreshError?: string,
   ): void => {
+    const applySnapshot = (snapshot: InboxLoadSnapshot): void => {
+      if (run.runId !== runIdRef.current) return;
+      const inbox = previousInbox ? mergeSnapshotWithPrevious(previousInbox, snapshot) : snapshot;
+      setAppState((current) => (current.screen === "inbox" ? { ...current, inbox } : current));
+    };
+
     setAppState({
       screen: "inbox",
       provider,
@@ -215,6 +369,7 @@ export function App(): JSX.Element {
             isComplete: repositories.length === 0,
           }
         : pendingInbox(repositories.length),
+      refreshError,
     });
     void loadEngine().then(({ Effect, loadInbox }) =>
       Effect.runPromise(
@@ -222,32 +377,46 @@ export function App(): JSX.Element {
           concurrency: 4,
           signal: run.signal,
           onSnapshot: (snapshot) => {
-            if (run.runId !== runIdRef.current) return;
-            const inbox = previousInbox
-              ? mergeSnapshotWithPrevious(previousInbox, snapshot)
-              : snapshot;
-            setAppState((current) =>
-              current.screen === "inbox" ? { ...current, inbox } : current,
-            );
+            applySnapshot(snapshot);
           },
         }),
-      ),
+      ).then(applySnapshot),
     );
   };
 
-  const connect = (provider: CodeReviewProvider, user: ProviderUser): void => {
-    const run = beginRun();
+  const continueAuthenticated = (
+    credentials: BitbucketCredentials,
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+    run: { runId: number; signal: AbortSignal },
+    promptForVault: boolean,
+  ): void => {
     void loadSavedScope(provider, user).then(async (scope) => {
       if (run.runId !== runIdRef.current) return;
       if (scope) {
-        const repositories = await resolveScopeRepositories(provider, scope, run.signal);
+        const discovery = await resolveScopeRepositories(provider, scope, run.signal);
         if (run.runId !== runIdRef.current) return;
-        startSync(provider, user, scope, repositories, run);
+        const refreshError = discovery.failures > 0 ? workspaceDiscoveryWarning : undefined;
+        if (promptForVault) {
+          setAppState({
+            screen: "setup-vault",
+            credentials,
+            provider,
+            user,
+            scope,
+            repositories: discovery.repositories,
+            status: "idle",
+            refreshError,
+          });
+          return;
+        }
+        startSync(provider, user, scope, discovery.repositories, run, undefined, refreshError);
         return;
       }
       setAppState({
         screen: "select-sources",
         mode: "first-run",
+        credentials: promptForVault ? credentials : undefined,
         provider,
         user,
         workspaces: [],
@@ -257,6 +426,15 @@ export function App(): JSX.Element {
       });
       runFullDiscovery(provider, run);
     });
+  };
+
+  const connect = (
+    credentials: BitbucketCredentials,
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+  ): void => {
+    const run = beginRun();
+    continueAuthenticated(credentials, provider, user, run, true);
   };
 
   const runFullDiscovery = (
@@ -275,6 +453,8 @@ export function App(): JSX.Element {
               discovery: {
                 completed: 0,
                 total: workspaces.length,
+                repositoryCount: 0,
+                failures: workspacesResult._tag === "Left" ? 1 : 0,
                 isComplete: workspaces.length === 0,
               },
             }
@@ -283,7 +463,7 @@ export function App(): JSX.Element {
       await discoverRepositoriesForWorkspaces(
         provider,
         workspaces,
-        (completed, repositories) => {
+        (completed, repositories, failures) => {
           if (run.runId !== runIdRef.current) return;
           setAppState((current) =>
             current.screen === "select-sources"
@@ -293,6 +473,8 @@ export function App(): JSX.Element {
                   discovery: {
                     completed,
                     total: workspaces.length,
+                    repositoryCount: repositories.length,
+                    failures,
                     isComplete: completed === workspaces.length,
                   },
                 }
@@ -306,15 +488,37 @@ export function App(): JSX.Element {
 
   const saveScope = (scope: RepositoryScope): void => {
     if (appState.screen !== "select-sources") return;
-    const { provider, user, mode } = appState;
-    const previousInbox = mode === "manage" ? manageOriginRef.current?.inbox : undefined;
+    const { credentials, provider, user, mode } = appState;
+    const knownRepositories = appState.repositories;
+    const discoveryIsComplete = appState.discovery.isComplete;
+    const knownFailures = appState.discovery.failures;
+    const previousInbox = undefined;
     manageOriginRef.current = null;
     const run = beginRun();
     void saveScopeToStore(provider, user, scope).then(async () => {
       if (run.runId !== runIdRef.current) return;
-      const repositories = await resolveScopeRepositories(provider, scope, run.signal);
+      const discovery = discoveryIsComplete
+        ? {
+            repositories: (await loadEngine()).resolveRepositories(scope, knownRepositories),
+            failures: knownFailures,
+          }
+        : await resolveScopeRepositories(provider, scope, run.signal);
       if (run.runId !== runIdRef.current) return;
-      startSync(provider, user, scope, repositories, run, previousInbox);
+      const refreshError = discovery.failures > 0 ? workspaceDiscoveryWarning : undefined;
+      if (mode === "first-run" && credentials) {
+        setAppState({
+          screen: "setup-vault",
+          credentials,
+          provider,
+          user,
+          scope,
+          repositories: discovery.repositories,
+          status: "idle",
+          refreshError,
+        });
+        return;
+      }
+      startSync(provider, user, scope, discovery.repositories, run, previousInbox, refreshError);
     });
   };
 
@@ -328,6 +532,7 @@ export function App(): JSX.Element {
       mode: "manage",
       provider,
       user,
+      credentials: undefined,
       workspaces: [],
       repositories: [],
       initialScope: scope,
@@ -345,9 +550,100 @@ export function App(): JSX.Element {
   };
 
   const lock = (): void => {
-    beginRun();
+    const run = beginRun();
     manageOriginRef.current = null;
-    setAppState({ screen: "connect" });
+    rememberLockedOut();
+    setAppState({ screen: "unlock", status: "loading" });
+    void makeVaultServiceForUser()
+      .then(async (vault) => {
+        await vault.clearTrustedBrowser();
+        return vault.hasVault();
+      })
+      .then((hasVault) => {
+        if (run.runId !== runIdRef.current) return;
+        if (!hasVault) forgetLockedOut();
+        setAppState(hasVault ? { screen: "unlock", status: "idle" } : { screen: "connect" });
+      })
+      .catch(() => {
+        if (run.runId === runIdRef.current) {
+          setAppState({
+            screen: "unlock",
+            status: "error",
+            error: lockFailureMessage,
+          });
+        }
+      });
+  };
+
+  const finishVaultSetup = (kind: "passkey" | "passphrase" | "session", passphrase = ""): void => {
+    if (appState.screen !== "setup-vault") return;
+    const current = appState;
+    const run = beginRun();
+    const finish = () =>
+      startSync(
+        current.provider,
+        current.user,
+        current.scope,
+        current.repositories,
+        run,
+        current.previousInbox,
+        current.refreshError,
+      );
+    if (kind === "session") {
+      finish();
+      return;
+    }
+    setAppState({ ...current, status: "loading", error: undefined });
+    void makeVaultServiceForUser(current.user, current.credentials)
+      .then((vault) =>
+        kind === "passkey"
+          ? vault.enrollPasskey(current.credentials)
+          : vault.enrollPassphrase(current.credentials, passphrase),
+      )
+      .then(() => {
+        if (run.runId === runIdRef.current) {
+          forgetLockedOut();
+          finish();
+        }
+      })
+      .catch(() => {
+        if (run.runId === runIdRef.current) {
+          setAppState({
+            ...current,
+            status: "error",
+            error: "Unable to unlock the local vault",
+          });
+        }
+      });
+  };
+
+  const unlockVault = (kind: "passkey" | "passphrase", passphrase = ""): void => {
+    const run = beginRun();
+    setAppState({ screen: "unlock", status: "loading" });
+    void makeVaultServiceForUser()
+      .then((vault) =>
+        kind === "passkey" ? vault.unlockPasskey() : vault.unlockPassphrase(passphrase),
+      )
+      .then((credentials) =>
+        validateCredentials(credentials, run.signal).then((session) => ({
+          credentials,
+          ...session,
+        })),
+      )
+      .then(({ credentials, provider, user }) => {
+        if (run.runId !== runIdRef.current) return;
+        forgetLockedOut();
+        continueAuthenticated(credentials, provider, user, run, false);
+      })
+      .catch(() => {
+        if (run.runId === runIdRef.current) {
+          setAppState({
+            screen: "unlock",
+            status: "error",
+            error: "Unable to unlock the local vault",
+          });
+        }
+      });
   };
 
   const markReviewed = (pullRequest: PullRequestSummary): void => {
@@ -373,7 +669,8 @@ export function App(): JSX.Element {
     const run = beginRun();
     void resolveScopeRepositories(provider, scope, run.signal).then((repositories) => {
       if (run.runId !== runIdRef.current) return;
-      startSync(provider, user, scope, repositories, run, inbox);
+      const refreshError = repositories.failures > 0 ? workspaceDiscoveryWarning : undefined;
+      startSync(provider, user, scope, repositories.repositories, run, inbox, refreshError);
     });
   };
 
@@ -386,7 +683,30 @@ export function App(): JSX.Element {
         </div>
         <ThemeControl theme={selectedTheme} resolvedTheme={diffTheme} onThemeChange={setTheme} />
       </header>
+      {appState.screen === "restoring" ? (
+        <p className="app-shell inbox-copy" role="status">
+          Restoring Revelio…
+        </p>
+      ) : null}
       {appState.screen === "connect" ? <ConnectScreen onConnected={connect} /> : null}
+      {appState.screen === "unlock" ? (
+        <Suspense
+          fallback={
+            <p className="app-shell inbox-copy" role="status">
+              Loading vault…
+            </p>
+          }
+        >
+          <VaultScreen
+            mode="unlock"
+            status={appState.status}
+            error={appState.error}
+            onPasskey={() => unlockVault("passkey")}
+            onPassphrase={(passphrase) => unlockVault("passphrase", passphrase)}
+            onReconnect={() => setAppState({ screen: "connect" })}
+          />
+        </Suspense>
+      ) : null}
       {appState.screen === "select-sources" ? (
         <Suspense
           fallback={
@@ -402,6 +722,24 @@ export function App(): JSX.Element {
             discovery={appState.discovery}
             onSave={saveScope}
             onCancel={appState.mode === "manage" ? cancelManage : undefined}
+          />
+        </Suspense>
+      ) : null}
+      {appState.screen === "setup-vault" ? (
+        <Suspense
+          fallback={
+            <p className="app-shell inbox-copy" role="status">
+              Loading vault…
+            </p>
+          }
+        >
+          <VaultScreen
+            mode="setup"
+            status={appState.status}
+            error={appState.error}
+            onPasskey={() => finishVaultSetup("passkey")}
+            onPassphrase={(passphrase) => finishVaultSetup("passphrase", passphrase)}
+            onSessionOnly={() => finishVaultSetup("session")}
           />
         </Suspense>
       ) : null}

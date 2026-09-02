@@ -70,7 +70,12 @@ describe("passphrase-sealed credential envelope", () => {
 describe("passkey PRF-sealed credential envelope", () => {
   it("round-trips credentials using the PRF output as key material", async () => {
     const prfOutput = new Uint8Array(32).fill(9);
-    const envelope = await sealWithPrfOutput(payload, prfOutput, deterministicRandomBytes());
+    const envelope = await sealWithPrfOutput(
+      payload,
+      prfOutput,
+      new Uint8Array([1, 2, 3]),
+      deterministicRandomBytes(),
+    );
     const serialized = serializeEnvelope(envelope);
     expect(serialized).not.toContain(payload.email);
     expect(serialized).not.toContain(payload.apiToken);
@@ -82,6 +87,7 @@ describe("passkey PRF-sealed credential envelope", () => {
     const envelope = await sealWithPrfOutput(
       payload,
       new Uint8Array(32).fill(9),
+      new Uint8Array([1, 2, 3]),
       deterministicRandomBytes(),
     );
 

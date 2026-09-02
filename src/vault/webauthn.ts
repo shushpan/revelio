@@ -9,6 +9,15 @@ export interface EnrolledPasskey {
   readonly credentialId: Uint8Array;
 }
 
+export interface PasskeyPrfEnrollment extends EnrolledPasskey {
+  readonly prfOutput: Uint8Array;
+}
+
+export interface WebAuthnPrfPort {
+  enroll(): Promise<PasskeyPrfEnrollment>;
+  authenticate(credentialId: Uint8Array): Promise<Uint8Array>;
+}
+
 export interface PasskeyEnrollmentOptions {
   readonly rp: PublicKeyCredentialRpEntity;
   readonly user: PublicKeyCredentialUserEntity;
@@ -102,3 +111,16 @@ export const authenticateWithPrf = async (
 
   return toFixedLengthBytes(credential.getClientExtensionResults().prf?.results?.first, 32);
 };
+
+export const makeWebAuthnPrfPort = (
+  port: CredentialPort | undefined,
+  options?: PasskeyEnrollmentOptions,
+): WebAuthnPrfPort => ({
+  enroll: async () => {
+    if (!options) throw new Error(VAULT_UNLOCK_ERROR_MESSAGE);
+    const enrolled = await enrollPasskey(port, options);
+    const prfOutput = await authenticateWithPrf(port, enrolled.credentialId);
+    return { ...enrolled, prfOutput };
+  },
+  authenticate: (credentialId) => authenticateWithPrf(port, credentialId),
+});

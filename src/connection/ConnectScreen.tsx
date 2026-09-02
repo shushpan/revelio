@@ -9,7 +9,11 @@ import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 import type { CodeReviewProvider, ProviderUser } from "../providers/contracts";
 
 export interface ConnectScreenProps {
-  readonly onConnected: (provider: CodeReviewProvider, user: ProviderUser) => void;
+  readonly onConnected: (
+    credentials: BitbucketCredentials,
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+  ) => void;
 }
 
 export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element {
@@ -36,7 +40,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
       })
       .then(({ provider, user }) => {
         if (requestId !== runId.current) return;
-        onConnected(provider, user);
+        onConnected(credentials, provider, user);
       })
       .catch(() => {
         if (requestId !== runId.current) return;
@@ -58,7 +62,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
         </Card.Header>
         <Card.Content>
           <form onSubmit={connect} className="connection-form">
-            <TextField name="email" fullWidth>
+            <TextField name="revelioAtlassianEmail" fullWidth>
               <Label>Atlassian email</Label>
               <Input
                 type="email"
@@ -67,11 +71,11 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
                 onChange={(event) => setEmail(event.target.value)}
               />
             </TextField>
-            <TextField name="apiToken" fullWidth>
+            <TextField name="revelioBitbucketApiToken" fullWidth>
               <Label>Bitbucket API token</Label>
               <Input
                 type="password"
-                autoComplete="off"
+                autoComplete="new-password"
                 value={apiToken}
                 onChange={(event) => setApiToken(event.target.value)}
               />

@@ -41,7 +41,7 @@ export function InboxScreen({
       ),
     [filter, pullRequests, reviewed, user.id],
   );
-  const canShowEmptyCopy = isComplete && failures.length === 0;
+  const canShowEmptyCopy = isComplete && failures.length === 0 && !refreshError;
 
   return (
     <main className="app-shell inbox-page">

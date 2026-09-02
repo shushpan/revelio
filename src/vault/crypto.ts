@@ -4,13 +4,19 @@ import { VAULT_UNLOCK_ERROR_MESSAGE } from "./model";
 
 export type VaultMode = "passkey" | "passphrase";
 
-export interface CredentialEnvelope {
+interface CredentialEnvelopeBase {
   readonly version: 1;
-  readonly mode: VaultMode;
   readonly salt: Uint8Array;
   readonly nonce: Uint8Array;
   readonly ciphertext: Uint8Array;
 }
+
+export type CredentialEnvelope =
+  | (CredentialEnvelopeBase & { readonly mode: "passphrase" })
+  | (CredentialEnvelopeBase & {
+      readonly mode: "passkey";
+      readonly credentialId: Uint8Array;
+    });
 
 export const ARGON2_PARAMETERS = {
   parallelism: 1,
@@ -157,13 +163,14 @@ export const openWithPassphrase = async (
 export const sealWithPrfOutput = async (
   payload: BitbucketCredentialPayload,
   prfOutput: Uint8Array,
+  credentialId: Uint8Array,
   randomBytes: (length: number) => Uint8Array = generateRandomBytes,
 ): Promise<CredentialEnvelope> => {
   const salt = randomBytes(32);
   const nonce = randomBytes(12);
   const key = await deriveVaultKey(prfOutput, salt, "passkey");
   const ciphertext = await encryptJson(key, "passkey", nonce, payload);
-  return { version: 1, mode: "passkey", salt, nonce, ciphertext };
+  return { version: 1, mode: "passkey", salt, nonce, ciphertext, credentialId };
 };
 
 export const openWithPrfOutput = async (

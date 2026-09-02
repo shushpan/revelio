@@ -56,6 +56,7 @@ const installBitbucketFixtures = async (page: Page): Promise<() => ReadonlyArray
     const request = route.request();
     const url = assertCredentials(route);
     const path = `${url.pathname}${url.search}`;
+    const search = url.searchParams;
 
     if (request.method() === "OPTIONS") {
       await route.fulfill({
@@ -69,7 +70,7 @@ const installBitbucketFixtures = async (page: Page): Promise<() => ReadonlyArray
       return;
     }
 
-    observed.push(`${request.method()} ${path}`);
+    observed.push(`${request.method()} ${url.pathname}`);
     if (request.method() === "POST") {
       expect(path).toBe("/2.0/repositories/acme/review/pullrequests/7/comments");
       expect(request.postDataJSON()).toEqual({ content: { raw: "Looks good" } });
@@ -84,21 +85,37 @@ const installBitbucketFixtures = async (page: Page): Promise<() => ReadonlyArray
       });
       return;
     }
-    if (path === "/2.0/user/workspaces?pagelen=1") {
+    if (
+      url.pathname === "/2.0/user/workspaces" &&
+      search.get("pagelen") === "100" &&
+      search.get("fields") === "next,values.workspace.slug"
+    ) {
       await route.fulfill({ json: { values: [{ workspace: { slug: "acme" } }] } });
       return;
     }
-    if (path === "/2.0/repositories/acme?pagelen=1") {
+    if (
+      url.pathname === "/2.0/repositories/acme" &&
+      search.get("pagelen") === "100" &&
+      search.get("fields") === "next,values.slug"
+    ) {
       await route.fulfill({ json: { values: [{ slug: "review" }, { slug: "tools" }] } });
       return;
     }
-    if (path === "/2.0/repositories/acme/review/pullrequests?state=OPEN&page=1") {
+    if (
+      url.pathname === "/2.0/repositories/acme/review/pullrequests" &&
+      search.get("state") === "OPEN" &&
+      search.get("pagelen") === "100"
+    ) {
       await route.fulfill({
         json: { values: [pullRequest("review", 7, "Improve review queue", ["{reviewer-uuid}"])] },
       });
       return;
     }
-    if (path === "/2.0/repositories/acme/tools/pullrequests?state=OPEN&page=1") {
+    if (
+      url.pathname === "/2.0/repositories/acme/tools/pullrequests" &&
+      search.get("state") === "OPEN" &&
+      search.get("pagelen") === "100"
+    ) {
       await route.fulfill({
         json: { values: [pullRequest("tools", 8, "Tighten build checks", ["{other-uuid}"])] },
       });
@@ -121,6 +138,9 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await page.getByLabel("Atlassian email").fill(credentials.email);
   await page.getByLabel("Bitbucket API token").fill(credentials.token);
   await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
 
   await expect(page.getByRole("heading", { name: "Open pull requests" })).toBeVisible();
   await expect(page.getByText("acme/review")).toBeVisible();
@@ -138,10 +158,10 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await expect(page.locator(".review-notice")).toHaveText("Comment sent.");
   expect(observedRequests()).toEqual([
     "GET /2.0/user",
-    "GET /2.0/user/workspaces?pagelen=1",
-    "GET /2.0/repositories/acme?pagelen=1",
-    "GET /2.0/repositories/acme/review/pullrequests?state=OPEN&page=1",
-    "GET /2.0/repositories/acme/tools/pullrequests?state=OPEN&page=1",
+    "GET /2.0/user/workspaces",
+    "GET /2.0/repositories/acme",
+    "GET /2.0/repositories/acme/review/pullrequests",
+    "GET /2.0/repositories/acme/tools/pullrequests",
     "GET /2.0/repositories/acme/review/pullrequests/7/diff",
     "POST /2.0/repositories/acme/review/pullrequests/7/comments",
   ]);

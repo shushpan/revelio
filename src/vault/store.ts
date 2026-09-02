@@ -14,11 +14,16 @@ import {
   sealWithPrfOutput,
   type CredentialEnvelope,
 } from "./crypto";
-import { TRUSTED_BROWSER_TTL_MS, VAULT_UNLOCK_ERROR_MESSAGE, type VaultService } from "./model";
+import {
+  MIN_VAULT_PASSPHRASE_LENGTH,
+  TRUSTED_BROWSER_TTL_MS,
+  VAULT_UNLOCK_ERROR_MESSAGE,
+  type VaultService,
+} from "./model";
 
 export interface PasskeyPrfPort {
-  enroll(): Promise<Uint8Array>;
-  authenticate(): Promise<Uint8Array>;
+  enroll(): Promise<{ readonly credentialId: Uint8Array; readonly prfOutput: Uint8Array }>;
+  authenticate(credentialId: Uint8Array): Promise<Uint8Array>;
 }
 
 interface TrustedBrowserRecord {
@@ -70,10 +75,12 @@ export const makeVaultService = (
     await kv.put("vault", record, TRUSTED_BROWSER_KEY);
   };
 
-  const loadEnvelope = async (mode: CredentialEnvelope["mode"]): Promise<CredentialEnvelope> => {
+  const loadEnvelope = async <Mode extends CredentialEnvelope["mode"]>(
+    mode: Mode,
+  ): Promise<Extract<CredentialEnvelope, { readonly mode: Mode }>> => {
     const envelope = await kv.get<CredentialEnvelope>("vault", ENVELOPE_KEY);
     if (!envelope || envelope.mode !== mode) throw unlockFailure();
-    return envelope;
+    return envelope as Extract<CredentialEnvelope, { readonly mode: Mode }>;
   };
 
   return {
@@ -81,6 +88,7 @@ export const makeVaultService = (
 
     enrollPassphrase: (credentials, passphrase) =>
       runOrFail(async () => {
+        if (passphrase.trim().length < MIN_VAULT_PASSPHRASE_LENGTH) throw unlockFailure();
         const envelope = await sealWithPassphrase(credentials.payload, passphrase);
         await kv.put("vault", envelope, ENVELOPE_KEY);
         await createTrustedBrowserRecord(credentials.payload);
@@ -88,8 +96,8 @@ export const makeVaultService = (
 
     enrollPasskey: (credentials) =>
       runOrFail(async () => {
-        const prfOutput = await prf.enroll();
-        const envelope = await sealWithPrfOutput(credentials.payload, prfOutput);
+        const { credentialId, prfOutput } = await prf.enroll();
+        const envelope = await sealWithPrfOutput(credentials.payload, prfOutput, credentialId);
         await kv.put("vault", envelope, ENVELOPE_KEY);
         await createTrustedBrowserRecord(credentials.payload);
       }),
@@ -105,7 +113,7 @@ export const makeVaultService = (
     unlockPasskey: () =>
       runOrFail(async () => {
         const envelope = await loadEnvelope("passkey");
-        const prfOutput = await prf.authenticate();
+        const prfOutput = await prf.authenticate(envelope.credentialId);
         const payload = await openWithPrfOutput(envelope, prfOutput);
         await createTrustedBrowserRecord(payload);
         return toCredentials(payload);

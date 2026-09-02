@@ -30,8 +30,13 @@ const makeFakeKeyValueStore = (): {
   return { store, stores };
 };
 
-const makeFakePrfPort = (output: Uint8Array = new Uint8Array(32).fill(7)): PasskeyPrfPort => ({
-  enroll: async () => output,
+const defaultCredentialId = new Uint8Array([1, 2, 3]);
+
+const makeFakePrfPort = (
+  output: Uint8Array = new Uint8Array(32).fill(7),
+  credentialId: Uint8Array = defaultCredentialId,
+): PasskeyPrfPort => ({
+  enroll: async () => ({ credentialId, prfOutput: output }),
   authenticate: async () => output,
 });
 
@@ -64,6 +69,16 @@ describe("makeVaultService enrollment and unlock", () => {
     );
   });
 
+  it("rejects passphrase enrollment below twelve non-whitespace characters", async () => {
+    const { store } = makeFakeKeyValueStore();
+    const service = makeVaultService(store, makeFakePrfPort());
+
+    await expect(service.enrollPassphrase(credentials, "short")).rejects.toEqual(
+      new Error(VAULT_UNLOCK_ERROR_MESSAGE),
+    );
+    await expect(service.hasVault()).resolves.toBe(false);
+  });
+
   it("round-trips credentials sealed with a passkey PRF output", async () => {
     const { store } = makeFakeKeyValueStore();
     const service = makeVaultService(store, makeFakePrfPort());
@@ -71,6 +86,25 @@ describe("makeVaultService enrollment and unlock", () => {
     await service.enrollPasskey(credentials);
 
     await expect(service.unlockPasskey()).resolves.toEqual(credentials);
+  });
+
+  it("stores the passkey credential id and uses it for later unlock", async () => {
+    const { store } = makeFakeKeyValueStore();
+    const credentialId = new Uint8Array([8, 7, 6]);
+    let authenticatedCredentialId: Uint8Array | undefined;
+    const prfPort: PasskeyPrfPort = {
+      enroll: async () => ({ credentialId, prfOutput: new Uint8Array(32).fill(4) }),
+      authenticate: async (id) => {
+        authenticatedCredentialId = id;
+        return new Uint8Array(32).fill(4);
+      },
+    };
+    const service = makeVaultService(store, prfPort);
+
+    await service.enrollPasskey(credentials);
+    await expect(service.unlockPasskey()).resolves.toEqual(credentials);
+
+    expect(Array.from(authenticatedCredentialId ?? [])).toEqual([8, 7, 6]);
   });
 
   it("rejects unlocking a passphrase vault with the passkey method", async () => {
