@@ -1,6 +1,12 @@
 import { Effect } from "effect";
-import type { CodeReviewProvider, PullRequestSummary, RepositoryRef } from "../providers/contracts";
+import type {
+  CodeReviewProvider,
+  PullRequestSummary,
+  RepositoryRef,
+  ReviewSignal,
+} from "../providers/contracts";
 import type { ProviderError } from "../providers/errors";
+import { type Checkpoint, isCheckpointValid } from "./checkpoint";
 
 export interface InboxLoadFailure {
   readonly repository: RepositoryRef;
@@ -91,3 +97,11 @@ export const loadInbox = (
 
 export const inboxHasConfirmedEmptyResult = (snapshot: InboxLoadSnapshot): boolean =>
   snapshot.isComplete && snapshot.failures.length === 0 && snapshot.pullRequests.length === 0;
+
+export const shouldAppearInInbox = (
+  pullRequest: PullRequestSummary,
+  signals: ReadonlyArray<ReviewSignal>,
+  checkpoint: Checkpoint | undefined,
+  currentUserId: string,
+): boolean =>
+  checkpoint === undefined || !isCheckpointValid(pullRequest, signals, checkpoint, currentUserId);
