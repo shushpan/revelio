@@ -24,6 +24,8 @@ const UserDto = Schema.Struct({
   nickname: Schema.optional(Schema.String),
 });
 
+const ReviewerDto = Schema.Struct({ uuid: Schema.String });
+
 const PageDto = <A extends Schema.Schema.Any>(value: A) =>
   Schema.Struct({
     values: Schema.Array(value),
@@ -42,7 +44,7 @@ const PullRequestDto = Schema.Struct({
     commit: Schema.Struct({ hash: Schema.String }),
   }),
   destination: Schema.Struct({ branch: Schema.Struct({ name: Schema.String }) }),
-  reviewers: Schema.Array(UserDto),
+  reviewers: Schema.Array(ReviewerDto),
 });
 
 const ApprovalDto = Schema.Struct({ date: Timestamp, user: UserDto });

@@ -84,6 +84,10 @@ export interface CodeReviewProvider {
   readonly capabilities: ProviderCapabilities;
   readonly getCurrentUser: Effect.Effect<ProviderUser, ProviderError>;
   readonly discoverRepositories: () => Effect.Effect<RepositoryDiscoveryResult, ProviderError>;
+  readonly listWorkspaces: () => Effect.Effect<ReadonlyArray<string>, ProviderError>;
+  readonly listRepositories: (
+    workspace: string,
+  ) => Effect.Effect<ReadonlyArray<RepositoryRef>, ProviderError>;
   readonly listOpenPullRequests: (
     repository: RepositoryRef,
   ) => Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError>;

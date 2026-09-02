@@ -7,6 +7,7 @@ import {
   type DiagnosticCapability,
   type DiagnosticsReport,
 } from "../../connection/model";
+import type { RepositoryRef } from "../contracts";
 import type { ProviderError } from "../errors";
 import { mapBitbucketHttpError } from "./http-error";
 
@@ -224,9 +225,9 @@ export const runBitbucketDiagnostics = (
     const identity = yield* probe(client.getCurrentUser, "identity");
     results.identity = outcomeResult(identity);
 
-    const discovery = yield* probe(client.discoverRepositories(), "workspace-visibility");
-    if (discovery.result.status === "failed" || !("value" in discovery)) {
-      results["workspace-visibility"] = discovery.result;
+    const workspaceList = yield* probe(client.listWorkspaces(), "workspace-visibility");
+    if (workspaceList.result.status === "failed" || !("value" in workspaceList)) {
+      results["workspace-visibility"] = workspaceList.result;
       results["repository-visibility"] = unavailable("repository-visibility");
       results["open-pr-list"] = unavailable("open-pr-list");
       results.activity = unavailable("activity");
@@ -236,8 +237,8 @@ export const runBitbucketDiagnostics = (
       return reportFrom(results);
     }
 
-    const discoveryResult = discovery.value;
-    if (discoveryResult.workspaces.length === 0) {
+    const workspaces = workspaceList.value;
+    if (workspaces.length === 0) {
       results["workspace-visibility"] = unavailable("workspace-visibility");
       results["repository-visibility"] = unavailable("repository-visibility");
       results["open-pr-list"] = unavailable("open-pr-list");
@@ -252,15 +253,30 @@ export const runBitbucketDiagnostics = (
       capability: "workspace-visibility",
       status: "succeeded",
     };
-    const selectedRepository = discoveryResult.repositories[0];
+
+    const repositories: RepositoryRef[] = [];
+    const repositoryFailures: Array<ProviderError["_tag"]> = [];
+    for (const workspace of workspaces) {
+      const pageResult = yield* Effect.either(client.listRepositories(workspace));
+      if (pageResult._tag === "Left") {
+        repositoryFailures.push(pageResult.left._tag);
+        continue;
+      }
+      repositories.push(...pageResult.right);
+    }
+    repositories.sort((left, right) =>
+      `${left.workspace}/${left.slug}`.localeCompare(`${right.workspace}/${right.slug}`),
+    );
+
+    const selectedRepository = repositories[0];
     results["repository-visibility"] =
-      discoveryResult.failures.length > 0
+      repositoryFailures.length > 0
         ? {
             capability: "repository-visibility",
             status: "failed",
             errorTag: selectedRepository
               ? "PartialDiscovery"
-              : (discoveryResult.failures[0]?.errorTag ?? "PartialDiscovery"),
+              : (repositoryFailures[0] ?? "PartialDiscovery"),
           }
         : selectedRepository
           ? { capability: "repository-visibility", status: "succeeded" }

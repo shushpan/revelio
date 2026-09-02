@@ -10,6 +10,24 @@ const credentials = {
   payload: { email: "reviewer@example.test", apiToken: "synthetic-token" },
 } satisfies import("./auth").BitbucketCredentials;
 
+const pullRequestFieldsQuery = encodeURIComponent(
+  [
+    "next",
+    "values.id",
+    "values.title",
+    "values.description",
+    "values.state",
+    "values.updated_on",
+    "values.author.uuid",
+    "values.author.display_name",
+    "values.author.nickname",
+    "values.source.branch.name",
+    "values.source.commit.hash",
+    "values.destination.branch.name",
+    "values.reviewers.uuid",
+  ].join(","),
+);
+
 describe("Bitbucket read client", () => {
   it("normalizes identity, all pull-request pages, and review activity without mutation methods", async () => {
     const requests: Request[] = [];
@@ -57,7 +75,7 @@ describe("Bitbucket read client", () => {
 
     expect(requests.map((request) => request.url)).toEqual([
       "https://api.bitbucket.org/2.0/user",
-      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&page=1",
+      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=100&fields=${pullRequestFieldsQuery}`,
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?page=2",
       "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests/7/activity?page=1",
     ]);
@@ -181,7 +199,7 @@ describe("Bitbucket read client", () => {
     ).resolves.toEqual([]);
 
     expect(requests).toEqual([
-      "https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&page=1",
+      `https://api.bitbucket.org/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=100&fields=${pullRequestFieldsQuery}`,
       opaqueNext,
     ]);
   });
@@ -225,6 +243,49 @@ describe("Bitbucket read client", () => {
       "https://api.bitbucket.org/2.0/repositories/acme?pagelen=1",
       repoNext,
       "https://api.bitbucket.org/2.0/repositories/zeta?pagelen=1",
+    ]);
+  });
+
+  it("lists a 168-repository workspace across two pagelen=100 pages", async () => {
+    const requests: string[] = [];
+    const firstPage = {
+      next: "https://api.bitbucket.org/2.0/repositories/acme?cursor=opaque-second-page",
+      values: Array.from({ length: 100 }, (_, index) => ({ slug: `repo-${index}` })),
+    };
+    const secondPage = {
+      values: Array.from({ length: 68 }, (_, index) => ({ slug: `repo-${100 + index}` })),
+    };
+    const fetcher = vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      if (request.url.includes("cursor=opaque-second-page")) {
+        return new Response(JSON.stringify(secondPage), { status: 200 });
+      }
+      return new Response(JSON.stringify(firstPage), { status: 200 });
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+
+    const repositories = await Effect.runPromise(client.listRepositories("acme"));
+
+    expect(requests).toEqual([
+      "https://api.bitbucket.org/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug",
+      "https://api.bitbucket.org/2.0/repositories/acme?cursor=opaque-second-page",
+    ]);
+    expect(repositories).toHaveLength(168);
+  });
+
+  it("lists workspaces with pagelen=100 and partial fields", async () => {
+    const requests: string[] = [];
+    const fetcher = vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      return new Response(JSON.stringify({ values: [{ slug: "zeta" }, { slug: "acme" }] }), {
+        status: 200,
+      });
+    });
+    const client = makeBitbucketClient(credentials, fetcher);
+
+    await expect(Effect.runPromise(client.listWorkspaces())).resolves.toEqual(["acme", "zeta"]);
+    expect(requests).toEqual([
+      "https://api.bitbucket.org/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug",
     ]);
   });
 

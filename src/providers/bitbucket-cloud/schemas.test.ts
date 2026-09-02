@@ -43,6 +43,21 @@ describe("Bitbucket response schemas", () => {
     expect(result.values[0]?.id).toBe(7);
   });
 
+  it("decodes reviewers using only their uuid", () => {
+    const result = Effect.runSync(
+      decodePullRequestPage({
+        values: [
+          {
+            ...pullRequestPage.values[0],
+            reviewers: [{ uuid: "{reviewer}" }],
+          },
+        ],
+      }),
+    );
+
+    expect(result.values[0]?.reviewers).toEqual([{ uuid: "{reviewer}" }]);
+  });
+
   it("decodes documented workspace membership entries", () => {
     expect(
       Effect.runSync(decodeWorkspacePage({ values: [{ workspace: { slug: "acme" } }] })),

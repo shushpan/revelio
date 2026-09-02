@@ -32,8 +32,10 @@ const successfulFetcher = vi.fn(async (request: Request) => {
   const url = new URL(request.url);
   const path = `${url.pathname}${url.search}`;
   if (path === "/2.0/user") return response(diagnosticFixtures.user);
-  if (path === "/2.0/user/workspaces?pagelen=1") return response(diagnosticFixtures.workspaces);
-  if (path === "/2.0/repositories/acme?pagelen=1") return response(diagnosticFixtures.repositories);
+  if (path === "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug")
+    return response(diagnosticFixtures.workspaces);
+  if (path === "/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug")
+    return response(diagnosticFixtures.repositories);
   if (path === "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1")
     return response(diagnosticFixtures.pullRequests);
   if (path === "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1")
@@ -58,15 +60,16 @@ describe("Bitbucket diagnostics workflow", () => {
       const path = `${url.pathname}${url.search}`;
       paths.push(path);
       if (path === "/2.0/user") return response(diagnosticFixtures.user);
-      if (path === "/2.0/user/workspaces?pagelen=1")
+      if (path === "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug")
         return response({ values: [{ slug: "zeta" }], next: workspaceNext });
       if (path === new URL(workspaceNext).pathname + new URL(workspaceNext).search)
         return response({ values: [{ slug: "acme" }] });
-      if (path === "/2.0/repositories/acme?pagelen=1")
+      if (path === "/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug")
         return response({ values: [{ slug: "z-repo" }], next: repositoryNext });
       if (path === new URL(repositoryNext).pathname + new URL(repositoryNext).search)
         return response({ values: [{ slug: "a-repo" }] });
-      if (path === "/2.0/repositories/zeta?pagelen=1") return response({ secret: "partial" }, 403);
+      if (path === "/2.0/repositories/zeta?pagelen=100&fields=next%2Cvalues.slug")
+        return response({ secret: "partial" }, 403);
       if (path === "/2.0/repositories/acme/a-repo/pullrequests?state=OPEN&pagelen=1")
         return response(diagnosticFixtures.pullRequests);
       if (path.endsWith("/activity?pagelen=1")) return response(diagnosticFixtures.activity);
@@ -93,11 +96,11 @@ describe("Bitbucket diagnostics workflow", () => {
     expect(result.capabilities["open-pr-list"].status).toBe("succeeded");
     expect(paths).toEqual([
       "/2.0/user",
-      "/2.0/user/workspaces?pagelen=1",
+      "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug",
       new URL(workspaceNext).pathname + new URL(workspaceNext).search,
-      "/2.0/repositories/acme?pagelen=1",
+      "/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug",
       new URL(repositoryNext).pathname + new URL(repositoryNext).search,
-      "/2.0/repositories/zeta?pagelen=1",
+      "/2.0/repositories/zeta?pagelen=100&fields=next%2Cvalues.slug",
       "/2.0/repositories/acme/a-repo/pullrequests?state=OPEN&pagelen=1",
       "/2.0/repositories/acme/a-repo/pullrequests/7/activity?pagelen=1",
       "/2.0/repositories/acme/a-repo/pullrequests/7/comments?pagelen=1",
@@ -144,8 +147,8 @@ describe("Bitbucket diagnostics workflow", () => {
       }),
     ).toEqual([
       "/2.0/user",
-      "/2.0/user/workspaces?pagelen=1",
-      "/2.0/repositories/acme?pagelen=1",
+      "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug",
+      "/2.0/repositories/acme?pagelen=100&fields=next%2Cvalues.slug",
       "/2.0/repositories/acme/review/pullrequests?state=OPEN&pagelen=1",
       "/2.0/repositories/acme/review/pullrequests/7/activity?pagelen=1",
       "/2.0/repositories/acme/review/pullrequests/7/comments?pagelen=1",
@@ -320,9 +323,9 @@ describe("Bitbucket diagnostics workflow", () => {
       const path = `${url.pathname}${url.search}`;
       requestedPaths.push(path);
       if (path === "/2.0/user") return response(diagnosticFixtures.user);
-      if (path === "/2.0/user/workspaces?pagelen=1")
+      if (path === "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug")
         return response({ values: [{ slug: "acme cloud" }] });
-      if (path === "/2.0/repositories/acme%20cloud?pagelen=1")
+      if (path === "/2.0/repositories/acme%20cloud?pagelen=100&fields=next%2Cvalues.slug")
         return response({ values: [{ slug: "review" }] });
       if (path === "/2.0/repositories/acme%20cloud/review/pullrequests?state=OPEN&pagelen=1")
         return response(diagnosticFixtures.pullRequests);
@@ -337,8 +340,8 @@ describe("Bitbucket diagnostics workflow", () => {
 
     expect(requestedPaths.slice(0, 4)).toEqual([
       "/2.0/user",
-      "/2.0/user/workspaces?pagelen=1",
-      "/2.0/repositories/acme%20cloud?pagelen=1",
+      "/2.0/user/workspaces?pagelen=100&fields=next%2Cvalues.workspace.slug",
+      "/2.0/repositories/acme%20cloud?pagelen=100&fields=next%2Cvalues.slug",
       "/2.0/repositories/acme%20cloud/review/pullrequests?state=OPEN&pagelen=1",
     ]);
   });

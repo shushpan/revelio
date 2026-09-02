@@ -232,6 +232,24 @@ const repositoryPath = (repository: RepositoryRef): string =>
 const pullRequestPath = (pullRequest: PullRequestRef): string =>
   `${repositoryPath(pullRequest.repository)}/pullrequests/${encodeURIComponent(String(pullRequest.id))}`;
 
+const workspaceFields = "next,values.workspace.slug";
+const repositoryFields = "next,values.slug";
+const pullRequestFields = [
+  "next",
+  "values.id",
+  "values.title",
+  "values.description",
+  "values.state",
+  "values.updated_on",
+  "values.author.uuid",
+  "values.author.display_name",
+  "values.author.nickname",
+  "values.source.branch.name",
+  "values.source.commit.hash",
+  "values.destination.branch.name",
+  "values.reviewers.uuid",
+].join(",");
+
 export const makeBitbucketClient = (
   credentials: BitbucketCredentials,
   fetchImplementation: FetchImplementation = (request) => fetch(request),
@@ -296,12 +314,46 @@ export const makeBitbucketClient = (
       return { workspaces, repositories, failures };
     });
 
+  const listWorkspaces = (): Effect.Effect<ReadonlyArray<string>, ProviderError> =>
+    collectPages(
+      "workspace discovery",
+      `/user/workspaces?pagelen=100&fields=${encodeURIComponent(workspaceFields)}`,
+      "/user/workspaces",
+      (path) =>
+        requestJson(
+          path,
+          "workspace discovery",
+          "/user/workspaces",
+          credentials,
+          fetchImplementation,
+          options.signal,
+        ).pipe(Effect.flatMap(decodeWorkspacePage)),
+    ).pipe(Effect.map((slugs) => [...slugs].sort()));
+
+  const listRepositories = (
+    workspace: string,
+  ): Effect.Effect<ReadonlyArray<RepositoryRef>, ProviderError> =>
+    collectPages(
+      "repository discovery",
+      `/repositories/${encodeURIComponent(workspace)}?pagelen=100&fields=${encodeURIComponent(repositoryFields)}`,
+      `/repositories/${encodeURIComponent(workspace)}`,
+      (path) =>
+        requestJson(
+          path,
+          "repository discovery",
+          "/repositories/{workspace}",
+          credentials,
+          fetchImplementation,
+          options.signal,
+        ).pipe(Effect.flatMap(decodeRepositoryPage)),
+    ).pipe(Effect.map((slugs) => [...slugs].sort().map((slug) => ({ workspace, slug }))));
+
   const listOpenPullRequests = (
     repository: RepositoryRef,
   ): Effect.Effect<ReadonlyArray<PullRequestSummary>, ProviderError> =>
     collectPages(
       "open pull requests",
-      `${repositoryPath(repository)}/pullrequests?state=OPEN&page=1`,
+      `${repositoryPath(repository)}/pullrequests?state=OPEN&pagelen=100&fields=${encodeURIComponent(pullRequestFields)}`,
       `${repositoryPath(repository)}/pullrequests`,
       (path) => {
         return requestJson(
@@ -410,6 +462,8 @@ export const makeBitbucketClient = (
     },
     getCurrentUser,
     discoverRepositories,
+    listWorkspaces,
+    listRepositories,
     listOpenPullRequests,
     getReviewSignals,
     getPullRequestDiff,
