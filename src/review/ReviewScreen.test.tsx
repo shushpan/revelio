@@ -71,8 +71,12 @@ describe("ReviewScreen", () => {
         )}
         pullRequest={pullRequest}
         themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        reviewed={{}}
         onBack={vi.fn()}
         onMarkReviewed={onMarkReviewed}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -96,8 +100,12 @@ describe("ReviewScreen", () => {
         provider={provider(() => Effect.succeed(undefined))}
         pullRequest={pullRequest}
         themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        reviewed={{}}
         onBack={vi.fn()}
         onMarkReviewed={onMarkReviewed}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 

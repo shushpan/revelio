@@ -236,11 +236,70 @@ h2 {
 }
 
 .review-page {
-  padding-top: 0.75rem;
+  width: min(100% - 1.5rem, 96rem);
+  margin: 0 auto;
+  padding: 0.5rem 0 1.5rem;
+}
+.review-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 0.5rem 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
 }
 .review-title {
   flex: 1;
   min-width: 0;
+}
+.review-title h2 {
+  font-size: 1.05rem;
+}
+.review-tabs {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.6rem 0 0;
+}
+.review-tab {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+.review-tab-active {
+  color: inherit;
+  border-bottom-color: var(--accent);
+}
+.review-workspace {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+.review-filetree-column {
+  position: sticky;
+  top: 3.5rem;
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  padding: 0.5rem 0.25rem;
+  border-right: 1px solid var(--border);
+}
+.review-content-column {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .review-workspace {
+    grid-template-columns: 1fr;
+  }
+  .review-filetree-column {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
 }
 .review-title h2 {
   overflow: hidden;
@@ -311,6 +370,51 @@ h2 {
   min-height: 18rem;
   max-height: 42rem;
   overflow: auto;
+}
+
+.overview {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.75rem 0;
+  font-size: 0.9rem;
+}
+.overview-description {
+  white-space: pre-wrap;
+}
+.overview-empty {
+  margin: 0;
+  color: var(--muted);
+}
+.overview-branches {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.overview-reviewers,
+.overview-activity {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.overview-reviewer {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.overview-activity-item {
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+.overview-activity-actor {
+  font-weight: 600;
+}
+.overview-activity-text {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
 }
 
 @media (max-width: 680px) {

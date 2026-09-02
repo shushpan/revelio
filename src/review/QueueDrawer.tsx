@@ -1,4 +1,5 @@
-import type { JSX, KeyboardEvent } from "react";
+import type { JSX } from "react";
+import { useEffect } from "react";
 import type { PullRequestSummary } from "../providers/contracts";
 import { pullRequestKey } from "../inbox/InboxScreen";
 
@@ -17,21 +18,19 @@ export function QueueDrawer({
   onSelect,
   onClose,
 }: QueueDrawerProps): JSX.Element | null {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      onClose();
-    }
-  };
-
   return (
-    <div
-      className="queue-drawer-overlay"
-      style={overlayStyle}
-      onKeyDown={handleKeyDown}
-    >
+    <div className="queue-drawer-overlay" style={overlayStyle}>
       <button
         type="button"
         className="queue-drawer-backdrop"
@@ -39,12 +38,7 @@ export function QueueDrawer({
         style={backdropStyle}
         onClick={onClose}
       />
-      <aside
-        role="dialog"
-        aria-label="Review queue"
-        className="queue-drawer"
-        style={panelStyle}
-      >
+      <aside role="dialog" aria-label="Review queue" className="queue-drawer" style={panelStyle}>
         <header className="queue-drawer-header">
           <h2>Review queue</h2>
         </header>

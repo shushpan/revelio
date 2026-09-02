@@ -25,14 +25,26 @@ describe("QueueDrawer", () => {
 
   it("renders nothing when closed", () => {
     render(
-      <QueueDrawer queue={queue} currentIndex={0} isOpen={false} onSelect={vi.fn()} onClose={vi.fn()} />,
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={false}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("renders one row per queue entry with the current one marked", () => {
     render(
-      <QueueDrawer queue={queue} currentIndex={1} isOpen={true} onSelect={vi.fn()} onClose={vi.fn()} />,
+      <QueueDrawer
+        queue={queue}
+        currentIndex={1}
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
     );
     expect(screen.getByRole("button", { name: /First PR/ })).toBeInTheDocument();
     const current = screen.getByRole("button", { name: /Second PR/ });
@@ -42,7 +54,13 @@ describe("QueueDrawer", () => {
   it("calls onSelect with the chosen pull request", () => {
     const onSelect = vi.fn();
     render(
-      <QueueDrawer queue={queue} currentIndex={0} isOpen={true} onSelect={onSelect} onClose={vi.fn()} />,
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        onSelect={onSelect}
+        onClose={vi.fn()}
+      />,
     );
     fireEvent.click(screen.getByRole("button", { name: /First PR/ }));
     expect(onSelect).toHaveBeenCalledWith(queue[0]);
@@ -51,7 +69,13 @@ describe("QueueDrawer", () => {
   it("calls onClose on Escape", () => {
     const onClose = vi.fn();
     render(
-      <QueueDrawer queue={queue} currentIndex={0} isOpen={true} onSelect={vi.fn()} onClose={onClose} />,
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
     );
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalled();
@@ -60,7 +84,13 @@ describe("QueueDrawer", () => {
   it("calls onClose when the backdrop is clicked", () => {
     const onClose = vi.fn();
     render(
-      <QueueDrawer queue={queue} currentIndex={0} isOpen={true} onSelect={vi.fn()} onClose={onClose} />,
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
     );
     fireEvent.click(screen.getByLabelText("Close review queue"));
     expect(onClose).toHaveBeenCalled();

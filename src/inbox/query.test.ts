@@ -24,11 +24,8 @@ const ctx = (over: Partial<{ currentUserId: string; reviewed: ReadonlySet<string
   ...over,
 });
 
-const match = (
-  input: string,
-  pullRequest: PullRequestSummary,
-  context = ctx(),
-): boolean => matchesQuery(pullRequest, parseQuery(input), context);
+const match = (input: string, pullRequest: PullRequestSummary, context = ctx()): boolean =>
+  matchesQuery(pullRequest, parseQuery(input), context);
 
 describe("parseQuery", () => {
   it("splits terms on spaces and parses qualifier key/value", () => {
@@ -89,9 +86,9 @@ describe("matchesQuery identity qualifiers", () => {
   it("involves: matches author or reviewer", () => {
     expect(match("involves:@me", pr())).toBe(true); // reviewer
     expect(match("involves:author-id", pr())).toBe(true); // author
-    expect(match("involves:@me", pr({ reviewerIds: [], author: { id: "x", displayName: "X" } }))).toBe(
-      false,
-    );
+    expect(
+      match("involves:@me", pr({ reviewerIds: [], author: { id: "x", displayName: "X" } })),
+    ).toBe(false);
   });
 });
 

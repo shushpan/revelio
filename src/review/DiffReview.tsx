@@ -18,6 +18,11 @@ export interface DiffReviewProps {
   readonly themeType: "light" | "dark";
   readonly onInlineComment?: (intent: InlineCommentIntent) => void;
   readonly preprocessOptions?: PreprocessPatchAsyncOptions;
+  readonly activePath?: string | null;
+  readonly onActivePathChange?: (path: string) => void;
+  readonly onFilesChange?: (files: PreparedPatch["files"]) => void;
+  readonly hideFileNav?: boolean;
+  readonly disableWorkerPool?: boolean;
 }
 
 export function DiffReview({
@@ -25,31 +30,52 @@ export function DiffReview({
   themeType,
   onInlineComment,
   preprocessOptions,
+  activePath: controlledActivePath,
+  onActivePathChange,
+  onFilesChange,
+  hideFileNav = false,
+  disableWorkerPool = true,
 }: DiffReviewProps): JSX.Element {
   const [prepared, setPrepared] = useState<PreparedPatch | null>(null);
-  const [activePath, setActivePath] = useState<string | null>(null);
+  const [internalActivePath, setInternalActivePath] = useState<string | null>(null);
   const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [error, setError] = useState<string | null>(null);
   const [lastIntent, setLastIntent] = useState<InlineCommentIntent | null>(null);
   const codeViewRef = useRef<CodeViewHandle<InlineCommentIntent>>(null);
+  const activePath = controlledActivePath ?? internalActivePath;
 
   useEffect(() => {
     const controller = new AbortController();
     setPrepared(null);
-    setActivePath(null);
+    setInternalActivePath(null);
     setError(null);
     setLastIntent(null);
     void preprocessPatchAsync(patch, { ...preprocessOptions, signal: controller.signal })
       .then((nextPrepared) => {
         setPrepared(nextPrepared);
-        setActivePath(nextPrepared.files[0]?.path ?? null);
+        const firstPath = nextPrepared.files[0]?.path ?? null;
+        setInternalActivePath(firstPath);
+        if (firstPath) onActivePathChange?.(firstPath);
+        onFilesChange?.(nextPrepared.files);
       })
       .catch((nextError: unknown) => {
         if (controller.signal.aborted) return;
         setError(nextError instanceof Error ? nextError.message : "Unable to render patch");
       });
     return () => controller.abort();
-  }, [patch, preprocessOptions]);
+  }, [patch, preprocessOptions, onActivePathChange, onFilesChange]);
+
+  useEffect(() => {
+    if (!prepared || controlledActivePath == null) return;
+    const file = prepared.files.find((candidate) => candidate.path === controlledActivePath);
+    if (!file) return;
+    codeViewRef.current?.scrollTo({
+      type: "item",
+      id: file.id,
+      align: "start",
+      behavior: "instant",
+    });
+  }, [controlledActivePath, prepared]);
 
   const items = useMemo<readonly CodeViewItem<InlineCommentIntent>[]>(() => {
     if (!prepared) return [];
@@ -85,7 +111,8 @@ export function DiffReview({
       : null;
 
   const navigateToFile = (file: PreparedPatch["files"][number]): void => {
-    setActivePath(file.path);
+    setInternalActivePath(file.path);
+    onActivePathChange?.(file.path);
     codeViewRef.current?.scrollTo({
       type: "item",
       id: file.id,
@@ -126,19 +153,21 @@ export function DiffReview({
             {prepared.metadata.fileCount} files · {prepared.metadata.additions} additions ·{" "}
             {prepared.metadata.deletions} deletions
           </div>
-          <nav className="review-file-nav" aria-label="Changed files">
-            {prepared.files.map((file) => (
-              <Button
-                key={file.id}
-                className="file-nav-button"
-                aria-current={file.path === activeFile?.path ? "page" : undefined}
-                variant="secondary"
-                onPress={() => navigateToFile(file)}
-              >
-                {file.path}
-              </Button>
-            ))}
-          </nav>
+          {hideFileNav ? null : (
+            <nav className="review-file-nav" aria-label="Changed files">
+              {prepared.files.map((file) => (
+                <Button
+                  key={file.id}
+                  className="file-nav-button"
+                  aria-current={file.path === activeFile?.path ? "page" : undefined}
+                  variant="secondary"
+                  onPress={() => navigateToFile(file)}
+                >
+                  {file.path}
+                </Button>
+              ))}
+            </nav>
+          )}
           {inlineComment ? (
             <Button
               variant="secondary"
@@ -160,7 +189,7 @@ export function DiffReview({
             <CodeView
               ref={codeViewRef}
               items={items}
-              disableWorkerPool
+              disableWorkerPool={disableWorkerPool}
               options={{
                 diffStyle: layout,
                 themeType,

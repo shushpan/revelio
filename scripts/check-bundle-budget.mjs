@@ -17,7 +17,8 @@ const javascriptAssets = await Promise.all(
 const { initialBytes, largestLazy } = accountBundleAssets(index, javascriptAssets);
 
 const initialBudget = 350_000;
-const largestLazyBudget = 820_000;
+// Raised from 820_000 for the @pierre/diffs worker-pool chunk (diffs-worker-gate).
+const largestLazyBudget = 850_000;
 console.log(
   `Bundle budget: initial ${initialBytes} bytes / ${initialBudget}; largest lazy ${largestLazy.name} ${largestLazy.bytes} bytes / ${largestLazyBudget}`,
 );

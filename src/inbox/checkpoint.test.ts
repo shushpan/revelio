@@ -129,7 +129,12 @@ describe("isCheckpointValid", () => {
 
     it("stays valid for a declined PR even with a new head commit", () => {
       expect(
-        isCheckpointValid(pr({ state: "DECLINED", sourceCommit: "head-2" }), [], checkpoint(), USER),
+        isCheckpointValid(
+          pr({ state: "DECLINED", sourceCommit: "head-2" }),
+          [],
+          checkpoint(),
+          USER,
+        ),
       ).toBe(true);
     });
   });

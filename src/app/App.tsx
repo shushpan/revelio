@@ -650,17 +650,6 @@ export function App(): JSX.Element {
     const next = { ...reviewed, [pullRequestKey(pullRequest)]: pullRequest.sourceCommit };
     setReviewed(next);
     window.localStorage.setItem(reviewedStorageKey, JSON.stringify(next));
-    setAppState((current) =>
-      current.screen === "review"
-        ? {
-            screen: "inbox",
-            provider: current.provider,
-            user: current.user,
-            scope: current.scope,
-            inbox: current.inbox,
-          }
-        : current,
-    );
   };
 
   const refresh = (): void => {
@@ -769,8 +758,14 @@ export function App(): JSX.Element {
             provider={appState.provider}
             pullRequest={appState.pullRequest}
             themeType={diffTheme}
+            currentUserId={appState.user.id}
+            queue={appState.inbox.pullRequests}
+            reviewed={reviewed}
             onBack={() => setAppState({ ...appState, screen: "inbox" })}
             onMarkReviewed={markReviewed}
+            onSelectPullRequest={(pullRequest) =>
+              setAppState({ ...appState, screen: "review", pullRequest, inbox: appState.inbox })
+            }
           />
         </Suspense>
       ) : null}

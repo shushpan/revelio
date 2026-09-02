@@ -114,9 +114,7 @@ const termToken = (term: string): string => term.trim();
 export const toggleTerm = (input: string, term: string): string => {
   const target = termToken(term);
   const tokens = input.split(/\s+/).filter((t) => t.length > 0);
-  const next = tokens.includes(target)
-    ? tokens.filter((t) => t !== target)
-    : [...tokens, target];
+  const next = tokens.includes(target) ? tokens.filter((t) => t !== target) : [...tokens, target];
   return next.join(" ");
 };
 

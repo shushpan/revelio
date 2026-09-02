@@ -104,7 +104,7 @@ const installBitbucketFixtures = async (page: Page): Promise<() => ReadonlyArray
     if (
       url.pathname === "/2.0/repositories/acme/review/pullrequests" &&
       search.get("state") === "OPEN" &&
-      search.get("pagelen") === "100"
+      search.get("pagelen") === "50"
     ) {
       await route.fulfill({
         json: { values: [pullRequest("review", 7, "Improve review queue", ["{reviewer-uuid}"])] },
@@ -114,7 +114,7 @@ const installBitbucketFixtures = async (page: Page): Promise<() => ReadonlyArray
     if (
       url.pathname === "/2.0/repositories/acme/tools/pullrequests" &&
       search.get("state") === "OPEN" &&
-      search.get("pagelen") === "100"
+      search.get("pagelen") === "50"
     ) {
       await route.fulfill({
         json: { values: [pullRequest("tools", 8, "Tighten build checks", ["{other-uuid}"])] },
@@ -145,7 +145,7 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await expect(page.getByRole("heading", { name: "Open pull requests" })).toBeVisible();
   await expect(page.getByText("acme/review")).toBeVisible();
   await expect(page.getByText("acme/tools")).toHaveCount(0);
-  await page.getByRole("button", { name: "All open" }).click();
+  await page.getByLabel("Filter pull requests").fill("");
   await expect(page.getByText("acme/review")).toBeVisible();
   await expect(page.getByText("acme/tools")).toBeVisible();
 

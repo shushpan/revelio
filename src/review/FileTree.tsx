@@ -64,12 +64,7 @@ export function FileTree({ files, selected, onSelect }: FileTreeProps): JSX.Elem
   };
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: keyboard handled by row buttons.
-    <nav
-      aria-label="Changed files"
-      className="flex flex-col gap-0.5 text-sm"
-      onKeyDown={onKeyDown}
-    >
+    <nav aria-label="Changed files" className="flex flex-col gap-0.5 text-sm" onKeyDown={onKeyDown}>
       <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
         {groups.map(([dir, groupFiles]) => {
           const isOpen = !collapsed.has(dir);

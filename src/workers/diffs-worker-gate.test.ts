@@ -1,14 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import {
-  resetDiffsWorkerPoolGateForTests,
-  shouldUseDiffsWorkerPool,
-} from "./diffs-worker-gate";
+import { resetDiffsWorkerPoolGateForTests, shouldUseDiffsWorkerPool } from "./diffs-worker-gate";
 
 class FakeInitializingWorker {
   private listeners = new Map<string, Set<(event: unknown) => void>>();
 
   addEventListener(type: string, listener: (event: unknown) => void): void {
-    (this.listeners.get(type) ?? this.listeners.set(type, new Set()).get(type)!).add(listener);
+    const existing = this.listeners.get(type);
+    if (existing) existing.add(listener);
+    else this.listeners.set(type, new Set([listener]));
   }
 
   removeEventListener(type: string, listener: (event: unknown) => void): void {
