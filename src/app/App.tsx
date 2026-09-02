@@ -89,6 +89,7 @@ const mergeSnapshotWithPrevious = (
   previous: InboxLoadSnapshot,
   next: InboxLoadSnapshot,
 ): InboxLoadSnapshot => {
+  if (next.isComplete) return next;
   const resolvedRepositoryKeys = new Set<string>();
   for (const pullRequest of next.pullRequests) {
     resolvedRepositoryKeys.add(repositoryKey(pullRequest.ref.repository));

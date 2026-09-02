@@ -198,6 +198,7 @@ describe("Revelio shell", () => {
     await waitFor(() => expect(screen.getByText("Existing PR")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+    cleanup();
     render(<App />);
     await connectWith(buildProvider());
 
@@ -278,5 +279,39 @@ describe("Revelio shell", () => {
     staleCall.resolve([]);
     await Promise.resolve();
     expect(screen.getByText("Refreshed row")).toBeInTheDocument();
+  });
+
+  it("removes a stale pull request once a completed refresh finds none", async () => {
+    let callCount = 0;
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listOpenPullRequests: () => {
+          callCount += 1;
+          if (callCount === 1) {
+            return Effect.succeed([
+              {
+                ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+                title: "Row to remove",
+                description: "",
+                state: "OPEN" as const,
+                updatedAt: "2026-08-29T10:00:00Z",
+                sourceBranch: "feature/review",
+                targetBranch: "main",
+                sourceCommit: "abc123",
+                author: { id: "author", displayName: "Author" },
+                reviewerIds: ["reviewer"],
+              },
+            ]);
+          }
+          return Effect.succeed([]);
+        },
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    await waitFor(() => expect(screen.getByText("Row to remove")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(screen.queryByText("Row to remove")).not.toBeInTheDocument());
   });
 });
