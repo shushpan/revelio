@@ -2,17 +2,17 @@ import { Button } from "@heroui/react/button";
 import { Chip } from "@heroui/react/chip";
 import type { JSX } from "react";
 import { useMemo, useState } from "react";
-import type { PullRequestSummary, ProviderUser } from "../providers/contracts";
-import type { InboxLoadFailure } from "./load-inbox";
+import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
+import type { InboxLoadSnapshot } from "./load-inbox";
 
 export interface InboxScreenProps {
   readonly user: ProviderUser;
-  readonly pullRequests: ReadonlyArray<PullRequestSummary>;
-  readonly failures: ReadonlyArray<InboxLoadFailure>;
-  readonly warning?: string;
+  readonly inbox: InboxLoadSnapshot;
+  readonly refreshError?: string;
   readonly reviewed: Readonly<Record<string, string>>;
   readonly onSelect: (pullRequest: PullRequestSummary) => void;
   readonly onRefresh: () => void;
+  readonly onManageRepositories: () => void;
   readonly onLock: () => void;
 }
 
@@ -21,15 +21,16 @@ export const pullRequestKey = (pullRequest: PullRequestSummary): string =>
 
 export function InboxScreen({
   user,
-  pullRequests,
-  failures,
-  warning,
+  inbox,
+  refreshError,
   reviewed,
   onSelect,
   onRefresh,
+  onManageRepositories,
   onLock,
 }: InboxScreenProps): JSX.Element {
   const [filter, setFilter] = useState<"needs-review" | "all-open">("needs-review");
+  const { pullRequests, failures, totalRepositories, completedRepositories, isComplete } = inbox;
   const visiblePullRequests = useMemo(
     () =>
       pullRequests.filter(
@@ -40,6 +41,7 @@ export function InboxScreen({
       ),
     [filter, pullRequests, reviewed, user.id],
   );
+  const canShowEmptyCopy = isComplete && failures.length === 0;
 
   return (
     <main className="app-shell inbox-page">
@@ -50,6 +52,9 @@ export function InboxScreen({
           <p className="inbox-copy">Signed in as {user.displayName}</p>
         </div>
         <div className="inbox-actions">
+          <Button variant="secondary" onPress={onManageRepositories}>
+            Manage repositories
+          </Button>
           <Button variant="secondary" onPress={onRefresh}>
             Refresh
           </Button>
@@ -75,10 +80,18 @@ export function InboxScreen({
           All open
         </Button>
       </fieldset>
-      {warning || failures.length > 0 ? (
+      <p className="inbox-copy" role="status">
+        Loaded {completedRepositories} of {totalRepositories} repositories - {pullRequests.length}{" "}
+        pull requests found.
+      </p>
+      {refreshError ? (
+        <p className="inbox-warning" role="alert">
+          {refreshError}
+        </p>
+      ) : null}
+      {failures.length > 0 ? (
         <p className="inbox-warning" role="status">
-          {warning ??
-            "Some repositories could not be loaded. Successful repositories remain available."}
+          Results are incomplete: {failures.length} repositories could not be loaded.
         </p>
       ) : null}
       <ul className="inbox-list">
@@ -112,7 +125,7 @@ export function InboxScreen({
           );
         })}
       </ul>
-      {visiblePullRequests.length === 0 ? (
+      {visiblePullRequests.length === 0 && canShowEmptyCopy ? (
         <p className="inbox-empty" role="status">
           No pull requests in this view.
         </p>

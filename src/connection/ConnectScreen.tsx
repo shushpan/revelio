@@ -5,16 +5,11 @@ import { Label } from "@heroui/react/label";
 import { TextField } from "@heroui/react/textfield";
 import type { FormEvent, JSX } from "react";
 import { useRef, useState } from "react";
-import type { ProviderUser, CodeReviewProvider } from "../providers/contracts";
 import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
-import type { InboxLoadResult } from "../inbox/load-inbox";
+import type { CodeReviewProvider, ProviderUser } from "../providers/contracts";
 
 export interface ConnectScreenProps {
-  readonly onConnected: (
-    provider: CodeReviewProvider,
-    user: ProviderUser,
-    inbox: InboxLoadResult,
-  ) => void;
+  readonly onConnected: (provider: CodeReviewProvider, user: ProviderUser) => void;
 }
 
 export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element {
@@ -34,24 +29,14 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
     };
     setStatus("loading");
     setError(null);
-    void Promise.all([
-      import("effect/Effect"),
-      import("../providers/bitbucket-cloud/client"),
-      import("../inbox/load-inbox"),
-    ])
-      .then(([Effect, { makeBitbucketClient }, { loadInbox }]) => {
+    void Promise.all([import("effect/Effect"), import("../providers/bitbucket-cloud/client")])
+      .then(([Effect, { makeBitbucketClient }]) => {
         const provider = makeBitbucketClient(credentials);
-        return Effect.runPromise(
-          Effect.gen(function* () {
-            const user = yield* provider.getCurrentUser;
-            const inbox = yield* loadInbox(provider);
-            return { provider, user, inbox };
-          }),
-        );
+        return Effect.runPromise(provider.getCurrentUser).then((user) => ({ provider, user }));
       })
-      .then(({ provider, user, inbox }) => {
+      .then(({ provider, user }) => {
         if (requestId !== runId.current) return;
-        onConnected(provider, user, inbox);
+        onConnected(provider, user);
       })
       .catch(() => {
         if (requestId !== runId.current) return;

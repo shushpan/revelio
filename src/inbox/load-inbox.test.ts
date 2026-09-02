@@ -32,6 +32,8 @@ const provider = (overrides: Partial<CodeReviewProvider> = {}): CodeReviewProvid
   },
   getCurrentUser: Effect.succeed({ id: "reviewer", displayName: "Reviewer" }),
   discoverRepositories: () => Effect.succeed({ workspaces: [], repositories: [], failures: [] }),
+  listWorkspaces: () => Effect.succeed([]),
+  listRepositories: () => Effect.succeed([]),
   listOpenPullRequests: () => Effect.succeed([]),
   getReviewSignals: () => Effect.succeed([]),
   getPullRequestDiff: () => Effect.succeed(""),

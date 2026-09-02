@@ -39,6 +39,8 @@ const provider = (
   capabilities: { canReadPullRequests: true, canReadReviewSignals: false, canWriteReviews: true },
   getCurrentUser: Effect.succeed({ id: "reviewer", displayName: "Reviewer" }),
   discoverRepositories: () => Effect.succeed({ workspaces: [], repositories: [], failures: [] }),
+  listWorkspaces: () => Effect.succeed([]),
+  listRepositories: () => Effect.succeed([]),
   listOpenPullRequests: () => Effect.succeed([]),
   getReviewSignals: () => Effect.succeed([]),
   getPullRequestDiff: () => Effect.succeed("diff --git a/a.ts b/a.ts"),
