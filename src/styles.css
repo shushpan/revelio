@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@heroui/styles";
+@import "./ui/tokens.css";
 
 :root {
   font-family: ui-sans-serif, system-ui, sans-serif;
