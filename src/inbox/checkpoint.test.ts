@@ -25,6 +25,8 @@ const checkpoint = (overrides: Partial<Checkpoint> = {}): Checkpoint => ({
   pullRequestKey: "acme/repo#1",
   reviewedHeadCommit: "head-1",
   watermark: WATERMARK,
+  outcome: "reviewed",
+  finishedAt: WATERMARK,
   ...overrides,
 });
 
@@ -53,6 +55,11 @@ describe("isCheckpointValid", () => {
 
     it("invalidates when the user is requested as reviewer again after the watermark", () => {
       const signals = [signal({ kind: "requested", actorId: "{author}", createdAt: AFTER })];
+      expect(isCheckpointValid(pr(), signals, checkpoint(), USER)).toBe(false);
+    });
+
+    it("invalidates when the user's approval is replaced with changes requested after the watermark", () => {
+      const signals = [signal({ kind: "changes_requested", actorId: USER, createdAt: AFTER })];
       expect(isCheckpointValid(pr(), signals, checkpoint(), USER)).toBe(false);
     });
 
@@ -117,6 +124,13 @@ describe("isCheckpointValid", () => {
 
     it("ignores a re-request that predates the watermark", () => {
       const signals = [signal({ kind: "requested", actorId: "{author}", createdAt: BEFORE })];
+      expect(isCheckpointValid(pr(), signals, checkpoint(), USER)).toBe(true);
+    });
+
+    it("ignores malformed timestamps instead of treating them as newer", () => {
+      const signals = [
+        signal({ kind: "mentioned", actorId: "{other}", createdAt: "not-a-timestamp" }),
+      ];
       expect(isCheckpointValid(pr(), signals, checkpoint(), USER)).toBe(true);
     });
   });

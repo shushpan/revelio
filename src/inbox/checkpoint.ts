@@ -1,9 +1,13 @@
 import type { PullRequestSummary, ReviewSignal } from "../providers/contracts";
 
+export type ReviewOutcome = "approved" | "changes_requested" | "reviewed";
+
 export interface Checkpoint {
-  pullRequestKey: string;
-  reviewedHeadCommit: string;
-  watermark: string;
+  readonly pullRequestKey: string;
+  readonly reviewedHeadCommit: string;
+  readonly watermark: string;
+  readonly outcome: ReviewOutcome;
+  readonly finishedAt: string;
 }
 
 const isTerminal = (state: PullRequestSummary["state"]): boolean =>
@@ -12,7 +16,7 @@ const isTerminal = (state: PullRequestSummary["state"]): boolean =>
 const isAfter = (candidate: string, reference: string): boolean => {
   const a = Date.parse(candidate);
   const b = Date.parse(reference);
-  return Number.isNaN(a) || Number.isNaN(b) ? candidate > reference : a > b;
+  return !Number.isNaN(a) && !Number.isNaN(b) && a > b;
 };
 
 const isReentrySignal = (signal: ReviewSignal, currentUserId: string): boolean => {
@@ -23,6 +27,8 @@ const isReentrySignal = (signal: ReviewSignal, currentUserId: string): boolean =
     case "requested":
     case "mentioned":
       return signal.actorId !== currentUserId;
+    case "changes_requested":
+      return signal.actorId === currentUserId;
     // ReviewSignal carries no thread/parent linkage, so "direct reply in a participated
     // thread" is indistinguishable from a generic comment. The one signal we can read is
     // an @-mention of the user in the comment body.
