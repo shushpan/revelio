@@ -1,6 +1,6 @@
 # Revelio — DiffHub-Inspired Full UI Migration Design
 
-**Status:** Approved architecture; supersedes the HeroUI-only clauses of `docs/superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md` (see §4). Awaiting checkpoint review.
+**Status:** Approved for implementation planning; supersedes the HeroUI-only clauses of `docs/superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md` (see §4).
 
 **Date:** 2026-09-04
 
