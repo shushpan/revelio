@@ -1,55 +1,50 @@
 # Revelio
 
-Revelio is a backend-free Bitbucket Cloud review workspace. The browser connects
-directly to Bitbucket, discovers open pull requests across accessible
-repositories, renders a real pull-request diff, and sends review actions.
+Revelio is a backend-free, personal Bitbucket Cloud review workspace. Its browser
+connects directly to Bitbucket, lets one user choose the repositories that belong
+in their inbox, and keeps the review queue and credentials on that browser.
 
-## Usable review flow
+## Current review flow
 
-1. Enter an Atlassian email and Bitbucket API token and select **Connect**.
-2. Review the cross-repository inbox. **Needs my review** is the default;
-   **All open** keeps every discovered open pull request reachable.
-3. Open a pull request to load its raw Bitbucket patch in the diff-first review
-   surface.
-4. Send a general comment, approve, request changes, or mark the pull request
-   reviewed. A local per-source-commit checkpoint keeps reviewed work out of
-   the default inbox until the source commit changes.
-
-## Current features
-
-- Workspace-first discovery through Bitbucket's supported workspace,
-  repository, and open-pull-request endpoints.
-- Cross-repository inbox rows with repository, title, author, branches, update
-  time, reviewer status, and Needs my review / All open filters.
-- Real pull-request diff loading with worker-backed patch preparation, changed
-  file navigation, unified/split layout, and native light/dark Diffs themes.
-- General comments, Approve, Request changes, and Mark reviewed actions sent
-  directly to Bitbucket.
-- HeroUI controls with light, dark, and system theme choices.
-- Sanitized connection and action errors that do not display provider response
-  bodies.
+1. Enter an Atlassian email and Bitbucket API token, then choose a workspace or
+   individual repositories. The selection is saved per provider/user locally.
+2. Choose **This session only**, an encrypted passphrase vault, or a WebAuthn
+   passkey vault. Passphrase/passkey vaults provide a fixed seven-day trusted
+   browser window; session-only connections are not restored after reload.
+3. Revelio loads selected repositories with bounded concurrency and publishes
+   rows as each repository completes. A pending or failed repository is shown as
+   incomplete work, never as a normal empty inbox.
+4. The default query is `reviewer:@me is:unreviewed`. The supported qualifiers
+   are `author`, `reviewer`, `review-requested`, `involves`, `repo`, `workspace`,
+   and `is`; unsupported qualifiers are called out instead of filtering to a
+   misleading empty result.
+5. Open a pull request to review its raw patch. **Finish Review** confirms a
+   current head, applies the chosen decision when needed, confirms the head
+   again, persists a durable local checkpoint, then advances to the next item
+   captured in the queue. A changed head or supported new review signal makes a
+   checkpointed pull request actionable again.
 
 ## Security and privacy
 
 - Revelio has no application backend, telemetry service, runtime CDN, or
-  credential relay. Requests go from the browser to the fixed Bitbucket API
+  credential relay. Browser requests are limited to the fixed Bitbucket API
   origin.
-- Credentials remain in React memory only. Lock or reload clears them; there is
-  no encrypted vault or passkey storage in this release.
-- The browser uses GET requests for discovery and the minimum POST endpoints
-  needed for review actions. Non-secret reviewed checkpoints are the only data
-  written to local storage.
-- Real credentials, repository data, comments, and diffs must stay out of
-  source, logs, screenshots, traces, and commits. Automated browser fixtures
-  use disposable synthetic values only.
+- Credentials are kept in memory for a session, or encrypted locally when the
+  user deliberately enrolls a passphrase/passkey vault. **Lock** clears the
+  trusted-browser record and sensitive in-memory inbox state.
+- Repository scope and review checkpoints are local IndexedDB data. Checkpoints
+  are not credentials and are isolated by provider and user.
+- Real credentials, provider data, comments, diffs, traces, screenshots, and
+  HAR files must not be committed. Browser tests use synthetic identities and
+  intercepted Bitbucket responses only.
 
 ## Requirements
 
 - Node.js 20.19 or newer
 - Corepack and pnpm 11.24.0
-- Chromium for the Playwright acceptance suite
+- Chromium for Playwright
 
-## Install and run locally
+## Install and run
 
 ```bash
 git clone https://github.com/shushpan/revelio.git
@@ -60,57 +55,43 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the localhost URL printed by Vite. To build and serve the production
-bundle locally:
+For a production build and local preview:
 
 ```bash
 pnpm build
 pnpm preview
 ```
 
-If `pnpm` is missing, run the Corepack commands above. Homebrew users may
-install pnpm with `brew install pnpm`, while keeping the project's pinned
-version for reproducible results.
-
 ## Verification
-
-Run focused checks with:
-
-```bash
-pnpm test:unit
-pnpm build
-pnpm test:e2e
-```
-
-Or run the complete local contract:
 
 ```bash
 pnpm verify
+git diff --check
 ```
 
-The browser harness intercepts Bitbucket with synthetic fixtures and rejects
-unexpected external requests. Passing locally does not prove live Bitbucket
-CORS, token scopes, or provider behavior.
+`pnpm verify` formats/lints, type-checks, runs unit tests, builds the production
+bundle, and runs Playwright against that bundle. The browser harness rejects
+unexpected outbound origins and uses synthetic Bitbucket fixtures.
 
-## Current limitations
+The completed local milestone gate passed with 92 formatted files, 93 linted
+files, 32 unit files / 299 tests, a 312,026-byte initial production bundle
+(350,000-byte budget), an 834,025-byte largest lazy chunk (850,000-byte budget),
+and 8 Chromium acceptance tests.
 
-Credentials are session-memory only. The release does not yet include an
-encrypted passkey/passphrase vault, background caching, search or rules,
-repository exclusions, existing comment threads, a command palette or keyboard
-shortcuts, stacked pull requests, or additional providers.
+This is not live Bitbucket proof. A disposable-account check is still required
+for browser CORS, API-token scopes, activity/review-request observability,
+inline anchors, remote mutation receipts, and approval reset after a new commit.
 
-Live browser CORS, token scope sufficiency, activity watermarks, renewed-review
-signals, and mutation behavior against a real Bitbucket account depend on the
-user's environment and have not been validated by the synthetic browser suite.
+## Remaining product backlog
 
-## Contributing
-
-Keep credentials and real company data out of source, tests, logs, screenshots,
-traces, and commits. Run `pnpm verify` before opening a change, and update the
-security guidance when the provider boundary changes.
+- Saved priority/grouping/suggestion rules and the full reason/CI/age/size query
+  language with autocomplete.
+- Comparison ranges, Viewed state, metadata caching, command palette, keyboard
+  workflow, background refresh, and richer retry/rate-limit UX.
+- Existing comment-thread handling, stacked pull requests, multiple connections,
+  other providers, and encrypted review-content/draft persistence.
 
 ## License status
 
-No license file has been declared yet. Until the project publishes one, all
-rights remain reserved; contributions and reuse are not licensed by this
-README.
+No license file has been declared. Until one is published, all rights remain
+reserved; contributions and reuse are not licensed by this README.
