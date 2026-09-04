@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
-import { matchesQuery, parseQuery, pullRequestKey, toggleTerm } from "./query";
+import { matchesQuery, parseQuery, pullRequestKey, toggleTerm, validateQuery } from "./query";
 
 const author: ProviderUser = { id: "author-id", displayName: "Jane Doe", nickname: "jdoe" };
 
@@ -54,6 +54,39 @@ describe("parseQuery", () => {
     expect(parsed.terms).toEqual([
       { negated: false, key: "author", value: "Jane Doe" },
       { negated: false, key: "", value: "fix bug" },
+    ]);
+  });
+});
+
+describe("validateQuery", () => {
+  it("accepts every qualifier and value supported by the normalized pull request data", () => {
+    expect(
+      validateQuery(
+        'author:"Jane Doe" reviewer:@me review-requested:other involves:jdoe repo:acme/web workspace:acme is:open login',
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports qualifiers and values the current pull request data cannot support", () => {
+    expect(validateQuery("ci:failed reason:direct team:platform is:closed")).toEqual([
+      { token: "ci:failed", reason: "unsupported-qualifier" },
+      { token: "reason:direct", reason: "unsupported-qualifier" },
+      { token: "team:platform", reason: "unsupported-qualifier" },
+      { token: "is:closed", reason: "unsupported-value" },
+    ]);
+  });
+
+  it("reports qualifiers without values instead of treating them as free text", () => {
+    expect(validateQuery("ci: reason: is:")).toEqual([
+      { token: "ci:", reason: "unsupported-qualifier" },
+      { token: "reason:", reason: "unsupported-qualifier" },
+      { token: "is:", reason: "unsupported-value" },
+    ]);
+  });
+
+  it("reports an unterminated quoted token instead of treating it as a valid filter", () => {
+    expect(validateQuery('author:"Jane Doe')).toEqual([
+      { token: 'author:"Jane Doe', reason: "unterminated-quote" },
     ]);
   });
 });

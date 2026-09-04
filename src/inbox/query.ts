@@ -17,10 +17,30 @@ export interface QueryContext {
   readonly reviewed: ReadonlySet<string>;
 }
 
+export interface QueryValidationIssue {
+  readonly token: string;
+  readonly reason: "unsupported-qualifier" | "unsupported-value" | "unterminated-quote";
+}
+
 export const pullRequestKey = (pullRequest: PullRequestSummary): string =>
   `${pullRequest.ref.repository.workspace}/${pullRequest.ref.repository.slug}#${pullRequest.ref.id}`;
 
 const TOKEN = /(-?)([\w-]+:)?("[^"]*"|\S+)/g;
+const VALUELESS_QUALIFIER = /(?:^|\s)(-?)([\w-]+:)(?=\s|$)/g;
+
+const SUPPORTED_QUALIFIERS = new Set([
+  "author",
+  "reviewer",
+  "review-requested",
+  "involves",
+  "repo",
+  "workspace",
+  "is",
+]);
+
+const SUPPORTED_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  is: new Set(["reviewed", "unreviewed", "open"]),
+};
 
 export const parseQuery = (input: string): ParsedQuery => {
   const terms: QueryTerm[] = [];
@@ -32,6 +52,44 @@ export const parseQuery = (input: string): ParsedQuery => {
     terms.push({ negated: dash === "-", key, value });
   }
   return { terms };
+};
+
+export const validateQuery = (input: string): ReadonlyArray<QueryValidationIssue> => {
+  const quotes = [...input].filter((character) => character === '"').length;
+  if (quotes % 2 !== 0) {
+    const start = input.lastIndexOf(" ", input.lastIndexOf('"')) + 1;
+    return [{ token: input.slice(start).trim(), reason: "unterminated-quote" }];
+  }
+
+  const issues: Array<QueryValidationIssue & { readonly index: number }> = [];
+  for (const groups of input.matchAll(VALUELESS_QUALIFIER)) {
+    const [match, , rawKey] = groups;
+    const key = rawKey.slice(0, -1).toLowerCase();
+    issues.push({
+      token: rawKey,
+      reason: SUPPORTED_QUALIFIERS.has(key) ? "unsupported-value" : "unsupported-qualifier",
+      index: (groups.index ?? 0) + match.lastIndexOf(rawKey),
+    });
+  }
+  for (const groups of input.matchAll(TOKEN)) {
+    const [token, , rawKey, rawValue] = groups;
+    if (!rawKey) continue;
+
+    const key = rawKey.slice(0, -1).toLowerCase();
+    if (!SUPPORTED_QUALIFIERS.has(key)) {
+      issues.push({ token, reason: "unsupported-qualifier", index: groups.index ?? 0 });
+      continue;
+    }
+
+    const supportedValues = SUPPORTED_VALUES[key];
+    const value = rawValue.startsWith('"') ? rawValue.slice(1, -1) : rawValue;
+    if (supportedValues && !supportedValues.has(value.toLowerCase())) {
+      issues.push({ token, reason: "unsupported-value", index: groups.index ?? 0 });
+    }
+  }
+  return issues
+    .sort((left, right) => left.index - right.index)
+    .map(({ token, reason }) => ({ token, reason }));
 };
 
 const resolve = (value: string, ctx: QueryContext): string =>

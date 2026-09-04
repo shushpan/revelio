@@ -4,7 +4,14 @@ import type { JSX } from "react";
 import { useMemo, useState } from "react";
 import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
 import type { InboxLoadSnapshot } from "./load-inbox";
-import { hasTerm, matchesQuery, parseQuery, pullRequestKey, toggleTerm } from "./query";
+import {
+  hasTerm,
+  matchesQuery,
+  parseQuery,
+  pullRequestKey,
+  toggleTerm,
+  validateQuery,
+} from "./query";
 
 export { pullRequestKey };
 
@@ -12,8 +19,38 @@ const DEFAULT_QUERY = "reviewer:@me is:unreviewed";
 
 const QUICK_FILTERS: ReadonlyArray<{ readonly label: string; readonly term: string }> = [
   { label: "Requested", term: "reviewer:@me" },
-  { label: "New commits", term: "is:unreviewed" },
+  { label: "Unreviewed", term: "is:unreviewed" },
+  { label: "Reviewed", term: "is:reviewed" },
 ];
+
+const REVIEW_STATE_TERMS = new Set(["is:reviewed", "is:unreviewed"]);
+
+const normalizeReviewStateTerm = (term: string): string =>
+  term.toLowerCase().replace(/^is:"([^"]*)"$/, "is:$1");
+
+const isReviewStateTerm = (term: string): boolean =>
+  REVIEW_STATE_TERMS.has(normalizeReviewStateTerm(term));
+
+const toggleQuickFilter = (input: string, term: string): string => {
+  if (!isReviewStateTerm(term)) return toggleTerm(input, term);
+
+  const tokens = input.split(/\s+/).filter((token) => token.length > 0);
+  const target = normalizeReviewStateTerm(term);
+  const isActive = tokens.some((token) => normalizeReviewStateTerm(token) === target);
+  const withoutReviewState = tokens.filter((token) => !isReviewStateTerm(token));
+  return isActive ? withoutReviewState.join(" ") : [...withoutReviewState, term].join(" ");
+};
+
+const validationMessage = (issue: ReturnType<typeof validateQuery>[number]): string => {
+  switch (issue.reason) {
+    case "unsupported-qualifier":
+      return `Unsupported filter: ${issue.token}.`;
+    case "unsupported-value":
+      return `Unsupported value: ${issue.token}.`;
+    case "unterminated-quote":
+      return `Finish the quote in ${issue.token}.`;
+  }
+};
 
 export interface InboxScreenProps {
   readonly user: ProviderUser;
@@ -46,13 +83,19 @@ export function InboxScreen({
     }
     return keys;
   }, [pullRequests, reviewed]);
+  const queryIssues = useMemo(() => validateQuery(query), [query]);
   const visiblePullRequests = useMemo(() => {
+    if (queryIssues.length > 0) return pullRequests;
     const parsed = parseQuery(query);
     const ctx = { currentUserId: user.id, reviewed: reviewedKeys };
     return pullRequests.filter((pullRequest) => matchesQuery(pullRequest, parsed, ctx));
-  }, [pullRequests, query, reviewedKeys, user.id]);
-  const isNarrowed = query.trim().length > 0 && visiblePullRequests.length !== pullRequests.length;
-  const canShowEmptyCopy = isComplete && failures.length === 0 && !refreshError;
+  }, [pullRequests, query, queryIssues.length, reviewedKeys, user.id]);
+  const isNarrowed =
+    queryIssues.length === 0 &&
+    query.trim().length > 0 &&
+    visiblePullRequests.length !== pullRequests.length;
+  const canShowEmptyCopy =
+    queryIssues.length === 0 && isComplete && failures.length === 0 && !refreshError;
 
   return (
     <main className="app-shell inbox-page">
@@ -87,13 +130,15 @@ export function InboxScreen({
         </label>
         <div className="inbox-quick-filters">
           {QUICK_FILTERS.map(({ label, term }) => {
-            const active = hasTerm(query, term);
+            const active = isReviewStateTerm(term)
+              ? query.split(/\s+/).some((token) => normalizeReviewStateTerm(token) === term)
+              : hasTerm(query, term);
             return (
               <Button
                 key={term}
                 variant={active ? "primary" : "secondary"}
                 aria-pressed={active}
-                onPress={() => setQuery((current) => toggleTerm(current, term))}
+                onPress={() => setQuery((current) => toggleQuickFilter(current, term))}
               >
                 {label}
               </Button>
@@ -101,6 +146,11 @@ export function InboxScreen({
           })}
         </div>
       </div>
+      {queryIssues.map((issue) => (
+        <p key={`${issue.reason}:${issue.token}`} className="inbox-warning" role="status">
+          {validationMessage(issue)}
+        </p>
+      ))}
       <p className="inbox-copy" role="status">
         Loaded {completedRepositories} of {totalRepositories} repositories - {pullRequests.length}{" "}
         pull requests found.
