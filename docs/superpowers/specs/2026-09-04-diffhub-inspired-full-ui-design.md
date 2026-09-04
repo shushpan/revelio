@@ -294,7 +294,7 @@ The Queue button opens a panel listing `queue` (the `PullRequestSummary[]` captu
   **Decision — two-row toolbar composition below 768px** (§10.1's eight-item list no longer fits one 49px-tall row at narrow widths):
   - **Row 1:** Back, the PR identity block, Finish Review — in that order. The PR identity block truncates its text (repository/PR title) to make room; it never displaces or hides Finish Review, which stays visible and clickable in Row 1 at every width down to 320px.
   - **Row 2:** Queue, the split/unified toggle, collapse/expand-all, the Display dropdown, and the theme control, in that order.
-  - Both rows satisfy the base architecture's touch-target requirement (§17) via padding, not by exceeding 49px per row.
+  - Both rows satisfy the base architecture's touch-target requirement (§20) via padding, not by exceeding 49px per row.
 - **<480px (`--bp-sm`):** Inbox rows and the Review toolbar's PR-identity block truncate further (already-established truncation behavior, now driven by the shared token instead of the ad hoc `680px` breakpoint in today's `src/styles.css:420`).
 - Touch targets expand via padding, not by increasing the 24px tree row height or 49px toolbar height on desktop — this is the base architecture's existing accessibility requirement (§20), carried forward unchanged.
 
