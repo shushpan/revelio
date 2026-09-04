@@ -337,12 +337,14 @@ git commit -m "feat: integrate compact finish review workflow"
 **Files:**
 - Modify: `src/inbox/InboxScreen.tsx`
 - Modify: `src/inbox/InboxScreen.test.tsx`
+- Modify: `src/app/App.tsx`
+- Modify: `src/app/App.test.tsx`
 - Modify: `src/styles.css`
 - Modify: `e2e/review-flow.spec.ts`
 
 **Interfaces:**
 - Consumes: Task 1 Button/Chip/tokens; existing `InboxLoadSnapshot`, `DEFAULT_QUERY`, `QUICK_FILTERS`, `matchesQuery`, `validateQuery` unchanged.
-- Produces: edge-to-edge 49px Inbox toolbar and dense rows with identical behavior/callbacks.
+- Produces: edge-to-edge 49px Inbox toolbar and dense rows with identical behavior/callbacks; App hides the redundant global masthead for Inbox while keeping it on setup screens.
 
 - [ ] **Step 1: Pin behavior with failing presentation tests**
 
@@ -350,14 +352,14 @@ Keep every existing InboxScreen test. Add assertions for semantic toolbar, query
 
 - [ ] **Step 2: Migrate imports and layout only**
 
-Replace HeroUI `Button`/`Chip` with local primitives and native events. Build the toolbar from compact product identity, query, existing quick filters, source management, refresh/lock, and theme slot supplied by App if needed. Preserve validation feedback, progress wording, partial failures, successful rows, empty gating, ordering, and all query/filter logic without moving it.
+Replace HeroUI `Button`/`Chip` with local primitives and native events. Build the toolbar from compact product identity, query, existing quick filters, source management, refresh/lock, and the shared theme control supplied by App. Hide the global App masthead for `screen === "inbox"` so this toolbar is the only Inbox chrome; keep the masthead on Connect, Vault, and Repository Selection. Preserve validation feedback, progress wording, partial failures, successful rows, empty gating, ordering, and all query/filter logic without moving it.
 
 - [ ] **Step 3: Verify and commit**
 
 Run InboxScreen tests plus Playwright partial-progress, partial-failure, unsupported-query, and cross-repository selection scenarios; then typecheck/lint/format/build/diff-check.
 
 ```bash
-git add src/inbox/InboxScreen.tsx src/inbox/InboxScreen.test.tsx src/styles.css e2e/review-flow.spec.ts
+git add src/app/App.tsx src/app/App.test.tsx src/inbox/InboxScreen.tsx src/inbox/InboxScreen.test.tsx src/styles.css e2e/review-flow.spec.ts
 git commit -m "feat: migrate inbox to compact full-screen UI"
 ```
 

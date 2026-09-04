@@ -164,7 +164,7 @@ The research report notes that shadcn/ui distributes component *source*, not a r
 
 ### 9.1 Global rule: the Revelio masthead
 
-`src/app/App.tsx` currently renders its `<header className="app-shell app-header">` (product name, eyebrow, theme control) unconditionally, on every `screen` value including `"review"` (verified: lines 796–804, no conditional guard exists today). **Decision:** the masthead renders on every screen **except** `"review"`. The Review screen's own 49 px toolbar (§11) is the only chrome visible above the sidebar/diff grid; it includes its own theme control and back-to-inbox affordance, so the global masthead would be redundant chrome exactly where the DiffHub direction calls for none. This is implemented as a single conditional around the existing `<header>` block, keyed on `appState.screen !== "review"` — no change to the state machine itself.
+`src/app/App.tsx` currently renders its `<header className="app-shell app-header">` (product name, eyebrow, theme control) unconditionally, on every `screen` value including `"review"` (verified: lines 796–804, no conditional guard exists today). **Decision:** the masthead renders on the centered setup-flow screens (`"connect"`, `"unlock"`, `"vault-setup"`, and `"select-sources"`) and is absent from the two full-screen work surfaces (`"inbox"` and `"review"`). Review and Inbox each own a 49 px toolbar containing compact product identity and the same theme control (§9.5, §9.6, §10), so retaining the global masthead on either route would duplicate both chrome and theme actions. The condition changes presentation only; the state machine is unchanged.
 
 ### 9.2 Connect
 
