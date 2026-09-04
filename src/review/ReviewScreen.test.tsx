@@ -1,6 +1,6 @@
 import { Effect } from "effect";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeReviewProvider, PullRequestSummary } from "../providers/contracts";
 import { ReviewScreen } from "./ReviewScreen";
 
@@ -34,6 +34,7 @@ const pullRequest: PullRequestSummary = {
 
 const provider = (
   addGeneralComment: CodeReviewProvider["addGeneralComment"],
+  overrides: Partial<CodeReviewProvider> = {},
 ): CodeReviewProvider => ({
   id: "test",
   capabilities: { canReadPullRequests: true, canReadReviewSignals: false, canWriteReviews: true },
@@ -54,11 +55,250 @@ const provider = (
       operation: "inline comment",
       status: 403,
     }),
+  ...overrides,
 });
 
 describe("ReviewScreen", () => {
+  afterEach(() => cleanup());
+
+  it("advances from a middle queue item to the following item", async () => {
+    const first = { ...pullRequest, ref: { ...pullRequest.ref, id: 6 }, title: "First" };
+    const last = { ...pullRequest, ref: { ...pullRequest.ref, id: 8 }, title: "Last" };
+    const onSelectPullRequest = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[first, pullRequest, last]}
+        onBack={vi.fn()}
+        onSelectPullRequest={onSelectPullRequest}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(onSelectPullRequest).toHaveBeenCalledWith(last));
+  });
+
+  it("does not reuse a failed decision receipt after changing pull requests", async () => {
+    const nextPullRequest = { ...pullRequest, ref: { ...pullRequest.ref, id: 8 }, title: "Next" };
+    const approvePullRequest = vi.fn(() => Effect.succeed(undefined));
+    const saveCheckpoint = vi.fn(() => Promise.reject(new Error("storage failed")));
+    const reviewProvider = provider(() => Effect.succeed(undefined), {
+      approvePullRequest,
+      listOpenPullRequests: () => Effect.succeed([pullRequest, nextPullRequest]),
+    });
+    const view = render(
+      <ReviewScreen
+        provider={reviewProvider}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest, nextPullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
+
+    view.rerender(
+      <ReviewScreen
+        provider={reviewProvider}
+        pullRequest={nextPullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest, nextPullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not reuse an approved receipt when the chosen outcome changes", async () => {
+    const approvePullRequest = vi.fn(() => Effect.succeed(undefined));
+    const requestChanges = vi.fn(() => Effect.succeed(undefined));
+    const saveCheckpoint = vi.fn(() => Promise.reject(new Error("storage failed")));
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          approvePullRequest,
+          requestChanges,
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+
+    await waitFor(() => expect(requestChanges).toHaveBeenCalledTimes(1));
+  });
+
+  it("persists a reviewed checkpoint before advancing to the next captured queue item", async () => {
+    const saveCheckpoint = vi.fn(() => Promise.resolve());
+    const onSelectPullRequest = vi.fn();
+    const nextPullRequest = {
+      ...pullRequest,
+      ref: { ...pullRequest.ref, id: 8 },
+      title: "Next review",
+    };
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest, nextPullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={onSelectPullRequest}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
+    expect(onSelectPullRequest).toHaveBeenCalledWith(nextPullRequest);
+  });
+
+  it("locks review navigation until a finishing checkpoint is durable", async () => {
+    let completeCheckpoint = (): void => undefined;
+    const saveCheckpoint = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeCheckpoint = resolve;
+        }),
+    );
+    const onBack = vi.fn();
+    const onSelectPullRequest = vi.fn();
+    const nextPullRequest = {
+      ...pullRequest,
+      ref: { ...pullRequest.ref, id: 8 },
+      title: "Next review",
+    };
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest, nextPullRequest]}
+        onBack={onBack}
+        onSelectPullRequest={onSelectPullRequest}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
+    expect(screen.getByRole("dialog", { name: "Review queue" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Queue (2)" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "Review queue" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(onSelectPullRequest).not.toHaveBeenCalled();
+
+    completeCheckpoint();
+
+    await waitFor(() => expect(onSelectPullRequest).toHaveBeenCalledWith(nextPullRequest));
+  });
+
+  it("offers only local completion when review decisions are unavailable", async () => {
+    const approvePullRequest = vi.fn(() => Effect.succeed(undefined));
+    const requestChanges = vi.fn(() => Effect.succeed(undefined));
+    let completeCheckpoint = (): void => undefined;
+    const saveCheckpoint = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeCheckpoint = resolve;
+        }),
+    );
+    const nextPullRequest = {
+      ...pullRequest,
+      ref: { ...pullRequest.ref, id: 8 },
+      title: "Next review",
+    };
+    const onSelectPullRequest = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          capabilities: {
+            canReadPullRequests: true,
+            canReadReviewSignals: false,
+            canWriteReviews: false,
+          },
+          approvePullRequest,
+          requestChanges,
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        currentUserId="reviewer"
+        queue={[pullRequest, nextPullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={onSelectPullRequest}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+
+    expect(
+      screen.getByText("Remote review decisions are unavailable for this connection."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Request changes" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
+    expect(approvePullRequest).not.toHaveBeenCalled();
+    expect(requestChanges).not.toHaveBeenCalled();
+    expect(onSelectPullRequest).not.toHaveBeenCalled();
+
+    completeCheckpoint();
+
+    await waitFor(() => expect(onSelectPullRequest).toHaveBeenCalledWith(nextPullRequest));
+  });
+
   it("keeps a failed general comment in place without checkpointing", async () => {
-    const onMarkReviewed = vi.fn();
+    const saveCheckpoint = vi.fn(() => Promise.resolve());
     render(
       <ReviewScreen
         provider={provider(() =>
@@ -73,10 +313,9 @@ describe("ReviewScreen", () => {
         themeType="light"
         currentUserId="reviewer"
         queue={[pullRequest]}
-        reviewed={{}}
         onBack={vi.fn()}
-        onMarkReviewed={onMarkReviewed}
         onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
       />,
     );
 
@@ -89,12 +328,12 @@ describe("ReviewScreen", () => {
         "Keep this text",
       ),
     );
-    expect(onMarkReviewed).not.toHaveBeenCalled();
+    expect(saveCheckpoint).not.toHaveBeenCalled();
     expect(screen.getByRole("status")).toHaveTextContent("could not be sent");
   });
 
   it("keeps a failed inline comment and its selected line in place", async () => {
-    const onMarkReviewed = vi.fn();
+    const saveCheckpoint = vi.fn(() => Promise.resolve());
     render(
       <ReviewScreen
         provider={provider(() => Effect.succeed(undefined))}
@@ -102,14 +341,13 @@ describe("ReviewScreen", () => {
         themeType="light"
         currentUserId="reviewer"
         queue={[pullRequest]}
-        reviewed={{}}
         onBack={vi.fn()}
-        onMarkReviewed={onMarkReviewed}
         onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose inline line" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose inline line" }));
     const comment = screen.getByRole("textbox", { name: "Inline comment" });
     fireEvent.change(comment, { target: { value: "Inline text" } });
     fireEvent.click(screen.getByRole("button", { name: "Send inline comment" }));
@@ -118,6 +356,6 @@ describe("ReviewScreen", () => {
       expect(screen.getByRole("textbox", { name: "Inline comment" })).toHaveValue("Inline text"),
     );
     expect(screen.getByText("Commenting on src/a.ts:3")).toBeInTheDocument();
-    expect(onMarkReviewed).not.toHaveBeenCalled();
+    expect(saveCheckpoint).not.toHaveBeenCalled();
   });
 });

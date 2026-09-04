@@ -255,6 +255,8 @@ describe("Revelio shell", () => {
     activeProvider = null;
     activeVault = buildVault();
     nextSavedScope = { selectedWorkspaces: ["alpha"], selectedRepositories: [] };
+    (localStorageMock.getItem as ReturnType<typeof vi.fn>).mockImplementation(() => null);
+    (localStorageMock.removeItem as ReturnType<typeof vi.fn>).mockClear();
   });
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -439,6 +441,210 @@ describe("Revelio shell", () => {
     await waitFor(() => expect(screen.queryByText("Row to remove")).not.toBeInTheDocument());
   });
 
+  it("keeps a checkpointed row reviewed while its repository is unresolved during refresh", async () => {
+    const previouslyCheckpointed = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+      title: "Previously checkpointed",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T10:00:00Z",
+      sourceBranch: "feature/checkpointed",
+      targetBranch: "main",
+      sourceCommit: "checkpointed-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    const freshPullRequest = {
+      ref: { repository: { workspace: "beta", slug: "two" }, id: 2 },
+      title: "Fresh beta review",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T11:00:00Z",
+      sourceBranch: "feature/fresh",
+      targetBranch: "main",
+      sourceCommit: "fresh-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    const unresolvedAlpha = defer<ReadonlyArray<typeof previouslyCheckpointed>>();
+    let alphaCalls = 0;
+    let betaCalls = 0;
+    database.settings.set("checkpoints:bitbucket-cloud:reviewer", {
+      version: 1,
+      checkpoints: [
+        {
+          pullRequestKey: "alpha/one#1",
+          reviewedHeadCommit: "checkpointed-head",
+          watermark: "2026-08-28T10:00:00Z",
+          outcome: "reviewed",
+          finishedAt: "2026-08-28T10:00:00Z",
+        },
+      ],
+    });
+    nextSavedScope = { selectedWorkspaces: ["alpha", "beta"], selectedRepositories: [] };
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listWorkspaces: () => Effect.succeed(["alpha", "beta"]),
+        listRepositories: (workspace) =>
+          Effect.succeed(
+            workspace === "alpha"
+              ? [{ workspace: "alpha", slug: "one" }]
+              : [{ workspace: "beta", slug: "two" }],
+          ),
+        listOpenPullRequests: (repository) => {
+          if (repository.workspace === "alpha") {
+            alphaCalls += 1;
+            return alphaCalls === 1
+              ? Effect.succeed([previouslyCheckpointed])
+              : Effect.promise(() => unresolvedAlpha.promise);
+          }
+          betaCalls += 1;
+          return Effect.succeed(betaCalls === 1 ? [] : [freshPullRequest]);
+        },
+        getReviewSignals: () => Effect.succeed([]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(screen.getByText("Fresh beta review")).toBeInTheDocument());
+    expect(screen.queryByText("Previously checkpointed")).not.toBeInTheDocument();
+
+    unresolvedAlpha.resolve([]);
+    await waitFor(() =>
+      expect(screen.queryByText("Previously checkpointed")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("drops a checkpointed row when its repository resolves empty before another repository", async () => {
+    const previouslyCheckpointed = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+      title: "Resolved empty checkpoint",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T10:00:00Z",
+      sourceBranch: "feature/checkpointed",
+      targetBranch: "main",
+      sourceCommit: "checkpointed-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    const unresolvedBeta = defer<ReadonlyArray<never>>();
+    let alphaCalls = 0;
+    let betaCalls = 0;
+    database.settings.set("checkpoints:bitbucket-cloud:reviewer", {
+      version: 1,
+      checkpoints: [
+        {
+          pullRequestKey: "alpha/one#1",
+          reviewedHeadCommit: "checkpointed-head",
+          watermark: "2026-08-28T10:00:00Z",
+          outcome: "reviewed",
+          finishedAt: "2026-08-28T10:00:00Z",
+        },
+      ],
+    });
+    nextSavedScope = { selectedWorkspaces: ["alpha", "beta"], selectedRepositories: [] };
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listWorkspaces: () => Effect.succeed(["alpha", "beta"]),
+        listRepositories: (workspace) =>
+          Effect.succeed(
+            workspace === "alpha"
+              ? [{ workspace: "alpha", slug: "one" }]
+              : [{ workspace: "beta", slug: "two" }],
+          ),
+        listOpenPullRequests: (repository) => {
+          if (repository.workspace === "alpha") {
+            alphaCalls += 1;
+            return alphaCalls === 1 ? Effect.succeed([previouslyCheckpointed]) : Effect.succeed([]);
+          }
+          betaCalls += 1;
+          return betaCalls === 1
+            ? Effect.succeed([])
+            : Effect.promise(() => unresolvedBeta.promise);
+        },
+        getReviewSignals: () => Effect.succeed([]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(screen.getByText(/Loaded 1 of 2 repositories/)).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Filter pull requests"), {
+      target: { value: "is:open" },
+    });
+    expect(screen.queryByText("Resolved empty checkpoint")).not.toBeInTheDocument();
+
+    unresolvedBeta.resolve([]);
+  });
+
+  it("reviews a manually selected unrelated pull request without queuing unrelated rows", async () => {
+    const requestedPullRequest = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+      title: "Requested review",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T10:00:00Z",
+      sourceBranch: "feature/requested",
+      targetBranch: "main",
+      sourceCommit: "requested-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    const selectedUnrelatedPullRequest = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 2 },
+      title: "Standalone manual review",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T09:00:00Z",
+      sourceBranch: "feature/standalone",
+      targetBranch: "main",
+      sourceCommit: "standalone-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: [],
+    };
+    const otherUnrelatedPullRequest = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 3 },
+      title: "Other unrelated review",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T08:00:00Z",
+      sourceBranch: "feature/other",
+      targetBranch: "main",
+      sourceCommit: "other-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: [],
+    };
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listOpenPullRequests: () =>
+          Effect.succeed([
+            requestedPullRequest,
+            selectedUnrelatedPullRequest,
+            otherUnrelatedPullRequest,
+          ]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Requested review")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Requested" }));
+    fireEvent.click(await screen.findByText("Standalone manual review"));
+
+    expect(await screen.findByRole("button", { name: "Queue (1)" })).toBeInTheDocument();
+  });
+
   it("resumes from the trusted browser vault on reload before the seven-day expiry", async () => {
     activeProvider = buildProvider();
     activeVault = buildVault();
@@ -614,5 +820,169 @@ describe("Revelio shell", () => {
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText("No pull requests in this view.")).not.toBeInTheDocument();
+  });
+
+  it("migrates a legacy current-head review into this identity's checkpoint store", async () => {
+    (localStorageMock.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
+      key === "revelio.reviewed" ? JSON.stringify({ "alpha/one#1": "abc123" }) : null,
+    );
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listOpenPullRequests: () =>
+          Effect.succeed([
+            {
+              ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+              title: "Legacy review",
+              description: "",
+              state: "OPEN" as const,
+              updatedAt: "2026-08-29T10:00:00Z",
+              sourceBranch: "feature/review",
+              targetBranch: "main",
+              sourceCommit: "abc123",
+              author: { id: "author", displayName: "Author" },
+              reviewerIds: ["reviewer"],
+            },
+          ]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+
+    await waitFor(() =>
+      expect(localStorageMock.removeItem).toHaveBeenCalledWith("revelio.reviewed"),
+    );
+    expect(database.settings.get("checkpoints:bitbucket-cloud:reviewer")).toEqual({
+      version: 1,
+      checkpoints: [
+        expect.objectContaining({
+          pullRequestKey: "alpha/one#1",
+          reviewedHeadCommit: "abc123",
+          outcome: "reviewed",
+        }),
+      ],
+    });
+  });
+
+  it("migrates every matching legacy entry before removing the legacy key", async () => {
+    (localStorageMock.getItem as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
+      key === "revelio.reviewed"
+        ? JSON.stringify({ "alpha/one#1": "one", "alpha/one#2": "two" })
+        : null,
+    );
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        listOpenPullRequests: () =>
+          Effect.succeed([
+            {
+              ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+              title: "First legacy review",
+              description: "",
+              state: "OPEN" as const,
+              updatedAt: "2026-08-29T10:00:00Z",
+              sourceBranch: "feature/one",
+              targetBranch: "main",
+              sourceCommit: "one",
+              author: { id: "author", displayName: "Author" },
+              reviewerIds: ["reviewer"],
+            },
+            {
+              ref: { repository: { workspace: "alpha", slug: "one" }, id: 2 },
+              title: "Second legacy review",
+              description: "",
+              state: "OPEN" as const,
+              updatedAt: "2026-08-28T10:00:00Z",
+              sourceBranch: "feature/two",
+              targetBranch: "main",
+              sourceCommit: "two",
+              author: { id: "author", displayName: "Author" },
+              reviewerIds: ["reviewer"],
+            },
+          ]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+
+    await waitFor(() =>
+      expect(database.settings.get("checkpoints:bitbucket-cloud:reviewer")).toEqual({
+        version: 1,
+        checkpoints: [
+          expect.objectContaining({ pullRequestKey: "alpha/one#1" }),
+          expect.objectContaining({ pullRequestKey: "alpha/one#2" }),
+        ],
+      }),
+    );
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("revelio.reviewed");
+  });
+
+  it("keeps a finished review hidden when returning immediately to the inbox", async () => {
+    const finishedPullRequest = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+      title: "Finish without reopening",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T10:00:00Z",
+      sourceBranch: "feature/review",
+      targetBranch: "main",
+      sourceCommit: "abc123",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    render(<App />);
+    await connectWith(
+      buildProvider({ listOpenPullRequests: () => Effect.succeed([finishedPullRequest]) }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    fireEvent.click(await screen.findByText("Finish without reopening"));
+    fireEvent.click(await screen.findByRole("button", { name: "Finish Review" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Finish without reopening")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("does not load one user's checkpoint for another identity", async () => {
+    database.settings.set("checkpoints:bitbucket-cloud:reviewer", {
+      version: 1,
+      checkpoints: [
+        {
+          pullRequestKey: "alpha/one#1",
+          reviewedHeadCommit: "abc123",
+          watermark: "2026-08-28T10:00:00Z",
+          outcome: "reviewed",
+          finishedAt: "2026-08-28T10:00:00Z",
+        },
+      ],
+    });
+    const otherUser: ProviderUser = { id: "other-reviewer", displayName: "Other reviewer" };
+    render(<App />);
+    await connectWith(
+      buildProvider({
+        getCurrentUser: Effect.succeed(otherUser),
+        listOpenPullRequests: () =>
+          Effect.succeed([
+            {
+              ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+              title: "Other user's actionable review",
+              description: "",
+              state: "OPEN" as const,
+              updatedAt: "2026-08-29T10:00:00Z",
+              sourceBranch: "feature/review",
+              targetBranch: "main",
+              sourceCommit: "abc123",
+              author: { id: "author", displayName: "Author" },
+              reviewerIds: ["other-reviewer"],
+            },
+          ]),
+      }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+
+    expect(await screen.findByText("Other user's actionable review")).toBeInTheDocument();
   });
 });

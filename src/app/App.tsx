@@ -4,6 +4,7 @@ import type { JSX } from "react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ConnectScreen } from "../connection/ConnectScreen";
 import { InboxScreen, pullRequestKey } from "../inbox/InboxScreen";
+import type { Checkpoint } from "../inbox/checkpoint";
 import type { InboxLoadSnapshot } from "../inbox/load-inbox";
 import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 import type {
@@ -78,6 +79,7 @@ type AppState =
       readonly scope: RepositoryScope;
       readonly pullRequest: PullRequestSummary;
       readonly inbox: InboxLoadSnapshot;
+      readonly queue: ReadonlyArray<PullRequestSummary>;
     } & Session);
 
 const reviewedStorageKey = "revelio.reviewed";
@@ -95,6 +97,8 @@ const workspaceDiscoveryWarning =
   "Some selected workspaces could not be loaded. Results may be incomplete.";
 const pendingInbox = (totalRepositories: number): InboxLoadSnapshot => ({
   pullRequests: [],
+  validCheckpointKeys: [],
+  resolvedRepositoryKeys: [],
   failures: [],
   totalRepositories,
   completedRepositories: 0,
@@ -107,12 +111,14 @@ const loadEngine = () =>
     import("../inbox/load-inbox"),
     import("../scope/repository-scope"),
     import("../persistence/indexed-db"),
-  ]).then(([Effect, inbox, scope, persistence]) => ({
+    import("../persistence/checkpoint-store"),
+  ]).then(([Effect, inbox, scope, persistence, checkpoints]) => ({
     Effect,
     loadInbox: inbox.loadInbox,
     makeScopeStore: scope.makeScopeStore,
     resolveRepositories: scope.resolveRepositories,
     makeIndexedDbKeyValueStore: persistence.makeIndexedDbKeyValueStore,
+    makeCheckpointStore: checkpoints.makeCheckpointStore,
   }));
 
 const loadBitbucketClient = () =>
@@ -132,30 +138,57 @@ const loadVaultEngine = () =>
     makeIndexedDbKeyValueStore: persistence.makeIndexedDbKeyValueStore,
   }));
 
-const repositoryKey = (repository: RepositoryRef): string =>
-  [repository.workspace, repository.slug].join(String.fromCodePoint(0));
-
 const mergeSnapshotWithPrevious = (
   previous: InboxLoadSnapshot,
   next: InboxLoadSnapshot,
 ): InboxLoadSnapshot => {
   if (next.isComplete) return next;
-  const resolvedRepositoryKeys = new Set<string>();
-  for (const pullRequest of next.pullRequests) {
-    resolvedRepositoryKeys.add(repositoryKey(pullRequest.ref.repository));
-  }
-  for (const failure of next.failures) {
-    resolvedRepositoryKeys.add(repositoryKey(failure.repository));
-  }
+  const resolvedRepositoryKeys = new Set(next.resolvedRepositoryKeys);
   const staleFromPrevious = previous.pullRequests.filter(
-    (pullRequest) => !resolvedRepositoryKeys.has(repositoryKey(pullRequest.ref.repository)),
+    (pullRequest) =>
+      !resolvedRepositoryKeys.has(
+        [pullRequest.ref.repository.workspace, pullRequest.ref.repository.slug].join(
+          String.fromCodePoint(0),
+        ),
+      ),
   );
+  const staleKeys = new Set(staleFromPrevious.map(pullRequestKey));
+  const validCheckpointKeys = new Set(next.validCheckpointKeys ?? []);
+  for (const key of previous.validCheckpointKeys ?? []) {
+    if (staleKeys.has(key)) validCheckpointKeys.add(key);
+  }
   return {
     ...next,
     pullRequests: [...next.pullRequests, ...staleFromPrevious].sort((a, b) =>
       a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0,
     ),
+    validCheckpointKeys: [...validCheckpointKeys].sort(),
   };
+};
+
+const reviewedFromSnapshot = (snapshot: InboxLoadSnapshot): Record<string, string> => {
+  const valid = new Set(snapshot.validCheckpointKeys ?? []);
+  return Object.fromEntries(
+    snapshot.pullRequests
+      .filter((pullRequest) => valid.has(pullRequestKey(pullRequest)))
+      .map((pullRequest) => [pullRequestKey(pullRequest), pullRequest.sourceCommit]),
+  );
+};
+
+const actionableQueue = (
+  snapshot: InboxLoadSnapshot,
+  user: ProviderUser,
+  selected: PullRequestSummary,
+): ReadonlyArray<PullRequestSummary> => {
+  const valid = new Set(snapshot.validCheckpointKeys ?? []);
+  const actionable = snapshot.pullRequests.filter(
+    (pullRequest) =>
+      !valid.has(pullRequestKey(pullRequest)) &&
+      pullRequest.reviewerIds.some((id) => id.toLowerCase() === user.id.toLowerCase()),
+  );
+  return actionable.some((pullRequest) => pullRequestKey(pullRequest) === pullRequestKey(selected))
+    ? actionable
+    : [selected];
 };
 
 const discoverRepositoriesForWorkspaces = async (
@@ -296,7 +329,6 @@ const readLockedOut = (): boolean => {
 
 export function App(): JSX.Element {
   const [appState, setAppState] = useState<AppState>({ screen: "restoring" });
-  const [reviewed, setReviewed] = useState<Record<string, string>>(readReviewed);
   const { theme, resolvedTheme, setTheme } = useTheme("system");
   const selectedTheme: ThemeChoice = theme === "light" || theme === "dark" ? theme : "system";
   const diffTheme = resolvedTheme === "dark" ? "dark" : "light";
@@ -304,12 +336,107 @@ export function App(): JSX.Element {
   const runIdRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const manageOriginRef = useRef<(AppState & { readonly screen: "inbox" }) | null>(null);
+  const checkpointsRef = useRef<ReadonlyArray<Checkpoint>>([]);
+  const legacyMigrationRef = useRef<string | null>(null);
+  const activeCheckpointIdentityRef = useRef<string | null>(null);
 
   const beginRun = (): { runId: number; signal: AbortSignal } => {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
     return { runId: ++runIdRef.current, signal: controller.signal };
+  };
+
+  const checkpointIdentity = (provider: CodeReviewProvider, user: ProviderUser): string =>
+    `${provider.id}:${user.id}`;
+
+  const saveCheckpoint = async (
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+    checkpoint: Checkpoint,
+  ): Promise<void> => {
+    const identity = checkpointIdentity(provider, user);
+    const { makeCheckpointStore, makeIndexedDbKeyValueStore } = await loadEngine();
+    await makeCheckpointStore(makeIndexedDbKeyValueStore()).save(provider.id, user.id, checkpoint);
+    if (activeCheckpointIdentityRef.current !== identity) return;
+    const next = [
+      ...checkpointsRef.current.filter(
+        (current) => current.pullRequestKey !== checkpoint.pullRequestKey,
+      ),
+      checkpoint,
+    ];
+    checkpointsRef.current = next;
+    setAppState((current) => {
+      if (
+        (current.screen !== "inbox" && current.screen !== "review") ||
+        current.provider !== provider ||
+        current.user.id !== user.id
+      ) {
+        return current;
+      }
+      const validCheckpointKeys = Array.from(
+        new Set([...(current.inbox.validCheckpointKeys ?? []), checkpoint.pullRequestKey]),
+      ).sort();
+      return { ...current, inbox: { ...current.inbox, validCheckpointKeys } };
+    });
+  };
+
+  const loadCheckpoints = async (
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+  ): Promise<ReadonlyArray<Checkpoint>> => {
+    try {
+      const { makeCheckpointStore, makeIndexedDbKeyValueStore } = await loadEngine();
+      return await makeCheckpointStore(makeIndexedDbKeyValueStore()).load(provider.id, user.id);
+    } catch {
+      return [];
+    }
+  };
+
+  const migrateLegacyCheckpoints = (
+    snapshot: InboxLoadSnapshot,
+    provider: CodeReviewProvider,
+    user: ProviderUser,
+    run: { runId: number },
+  ): void => {
+    const identity = checkpointIdentity(provider, user);
+    if (!snapshot.isComplete || snapshot.failures.length > 0) return;
+    if (activeCheckpointIdentityRef.current !== identity) return;
+    if (legacyMigrationRef.current === identity) return;
+    const legacy = readReviewed();
+    if (Object.keys(legacy).length === 0) return;
+    legacyMigrationRef.current = identity;
+    const timestamp = new Date().toISOString();
+    const known = new Set(checkpointsRef.current.map(({ pullRequestKey }) => pullRequestKey));
+    const checkpoints = snapshot.pullRequests.flatMap((pullRequest) => {
+      const key = pullRequestKey(pullRequest);
+      if (known.has(key) || legacy[key] !== pullRequest.sourceCommit) return [];
+      return [
+        {
+          pullRequestKey: key,
+          reviewedHeadCommit: pullRequest.sourceCommit,
+          watermark: timestamp,
+          outcome: "reviewed" as const,
+          finishedAt: timestamp,
+        },
+      ];
+    });
+    void (async () => {
+      try {
+        for (const checkpoint of checkpoints) {
+          await saveCheckpoint(provider, user, checkpoint);
+        }
+        if (run.runId !== runIdRef.current || activeCheckpointIdentityRef.current !== identity)
+          return;
+        try {
+          window.localStorage.removeItem(reviewedStorageKey);
+        } catch {
+          // The checkpoint store is authoritative even if this obsolete best-effort key remains.
+        }
+      } catch {
+        if (legacyMigrationRef.current === identity) legacyMigrationRef.current = null;
+      }
+    })();
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: vault restore is a one-time app bootstrap.
@@ -354,6 +481,7 @@ export function App(): JSX.Element {
       if (run.runId !== runIdRef.current) return;
       const inbox = previousInbox ? mergeSnapshotWithPrevious(previousInbox, snapshot) : snapshot;
       setAppState((current) => (current.screen === "inbox" ? { ...current, inbox } : current));
+      migrateLegacyCheckpoints(inbox, provider, user, run);
     };
 
     setAppState({
@@ -376,6 +504,8 @@ export function App(): JSX.Element {
         loadInbox(provider, repositories, {
           concurrency: 4,
           signal: run.signal,
+          checkpoints: checkpointsRef.current,
+          currentUserId: user.id,
           onSnapshot: (snapshot) => {
             applySnapshot(snapshot);
           },
@@ -391,40 +521,46 @@ export function App(): JSX.Element {
     run: { runId: number; signal: AbortSignal },
     promptForVault: boolean,
   ): void => {
-    void loadSavedScope(provider, user).then(async (scope) => {
+    activeCheckpointIdentityRef.current = checkpointIdentity(provider, user);
+    void loadCheckpoints(provider, user).then((checkpoints) => {
       if (run.runId !== runIdRef.current) return;
-      if (scope) {
-        const discovery = await resolveScopeRepositories(provider, scope, run.signal);
+      checkpointsRef.current = checkpoints;
+      legacyMigrationRef.current = null;
+      return loadSavedScope(provider, user).then(async (scope) => {
         if (run.runId !== runIdRef.current) return;
-        const refreshError = discovery.failures > 0 ? workspaceDiscoveryWarning : undefined;
-        if (promptForVault) {
-          setAppState({
-            screen: "setup-vault",
-            credentials,
-            provider,
-            user,
-            scope,
-            repositories: discovery.repositories,
-            status: "idle",
-            refreshError,
-          });
+        if (scope) {
+          const discovery = await resolveScopeRepositories(provider, scope, run.signal);
+          if (run.runId !== runIdRef.current) return;
+          const refreshError = discovery.failures > 0 ? workspaceDiscoveryWarning : undefined;
+          if (promptForVault) {
+            setAppState({
+              screen: "setup-vault",
+              credentials,
+              provider,
+              user,
+              scope,
+              repositories: discovery.repositories,
+              status: "idle",
+              refreshError,
+            });
+            return;
+          }
+          startSync(provider, user, scope, discovery.repositories, run, undefined, refreshError);
           return;
         }
-        startSync(provider, user, scope, discovery.repositories, run, undefined, refreshError);
-        return;
-      }
-      setAppState({
-        screen: "select-sources",
-        mode: "first-run",
-        credentials: promptForVault ? credentials : undefined,
-        provider,
-        user,
-        workspaces: [],
-        repositories: [],
-        initialScope: emptyScope,
-        discovery: emptyDiscovery,
+        setAppState({
+          screen: "select-sources",
+          mode: "first-run",
+          credentials: promptForVault ? credentials : undefined,
+          provider,
+          user,
+          workspaces: [],
+          repositories: [],
+          initialScope: emptyScope,
+          discovery: emptyDiscovery,
+        });
+        runFullDiscovery(provider, run);
       });
-      runFullDiscovery(provider, run);
     });
   };
 
@@ -646,12 +782,6 @@ export function App(): JSX.Element {
       });
   };
 
-  const markReviewed = (pullRequest: PullRequestSummary): void => {
-    const next = { ...reviewed, [pullRequestKey(pullRequest)]: pullRequest.sourceCommit };
-    setReviewed(next);
-    window.localStorage.setItem(reviewedStorageKey, JSON.stringify(next));
-  };
-
   const refresh = (): void => {
     if (appState.screen !== "inbox") return;
     const { provider, user, scope, inbox } = appState;
@@ -737,9 +867,15 @@ export function App(): JSX.Element {
           user={appState.user}
           inbox={appState.inbox}
           refreshError={appState.refreshError}
-          reviewed={reviewed}
+          reviewed={reviewedFromSnapshot(appState.inbox)}
           onSelect={(pullRequest) =>
-            setAppState({ ...appState, screen: "review", pullRequest, inbox: appState.inbox })
+            setAppState({
+              ...appState,
+              screen: "review",
+              pullRequest,
+              inbox: appState.inbox,
+              queue: actionableQueue(appState.inbox, appState.user, pullRequest),
+            })
           }
           onRefresh={refresh}
           onManageRepositories={manage}
@@ -755,16 +891,24 @@ export function App(): JSX.Element {
           }
         >
           <ReviewScreen
+            key={pullRequestKey(appState.pullRequest)}
             provider={appState.provider}
             pullRequest={appState.pullRequest}
             themeType={diffTheme}
             currentUserId={appState.user.id}
-            queue={appState.inbox.pullRequests}
-            reviewed={reviewed}
-            onBack={() => setAppState({ ...appState, screen: "inbox" })}
-            onMarkReviewed={markReviewed}
+            queue={appState.queue}
+            onBack={() =>
+              setAppState((current) =>
+                current.screen === "review" ? { ...current, screen: "inbox" } : current,
+              )
+            }
+            saveCheckpoint={(checkpoint) =>
+              saveCheckpoint(appState.provider, appState.user, checkpoint)
+            }
             onSelectPullRequest={(pullRequest) =>
-              setAppState({ ...appState, screen: "review", pullRequest, inbox: appState.inbox })
+              setAppState((current) =>
+                current.screen === "review" ? { ...current, pullRequest } : current,
+              )
             }
           />
         </Suspense>

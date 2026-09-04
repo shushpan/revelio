@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
 import { pullRequestKey } from "../inbox/InboxScreen";
+import type { Checkpoint } from "../inbox/checkpoint";
 import type {
   CodeReviewProvider,
   InlineCommentAnchor,
@@ -14,6 +15,12 @@ import { FileTree } from "./FileTree";
 import { Overview } from "./Overview";
 import type { PreparedPatchFile } from "./patch";
 import { QueueDrawer } from "./QueueDrawer";
+import {
+  FinishReviewError,
+  type FinishReviewOutcome,
+  type FinishReviewReceipt,
+  finishReview,
+} from "./finish-review";
 
 export interface ReviewScreenProps {
   readonly provider: CodeReviewProvider;
@@ -21,13 +28,19 @@ export interface ReviewScreenProps {
   readonly themeType: "light" | "dark";
   readonly currentUserId: string;
   readonly queue: ReadonlyArray<PullRequestSummary>;
-  readonly reviewed: Readonly<Record<string, string>>;
   readonly onBack: () => void;
-  readonly onMarkReviewed: (pullRequest: PullRequestSummary) => void;
   readonly onSelectPullRequest: (pullRequest: PullRequestSummary) => void;
+  /** Resolves only after the generated checkpoint is durable. */
+  readonly saveCheckpoint: (checkpoint: Checkpoint) => Promise<void>;
 }
 
 type Tab = "changes" | "overview";
+
+interface FinishAttempt {
+  readonly pullRequestKey: string;
+  readonly outcome: FinishReviewOutcome;
+  readonly receipt: FinishReviewReceipt;
+}
 
 export function ReviewScreen({
   provider,
@@ -35,10 +48,9 @@ export function ReviewScreen({
   themeType,
   currentUserId,
   queue,
-  reviewed,
   onBack,
-  onMarkReviewed,
   onSelectPullRequest,
+  saveCheckpoint,
 }: ReviewScreenProps): JSX.Element {
   const [patch, setPatch] = useState<string | null>(null);
   const [loadingError, setLoadingError] = useState<string | null>(null);
@@ -51,6 +63,10 @@ export function ReviewScreen({
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
   const [workerPoolEnabled, setWorkerPoolEnabled] = useState(false);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishAttempt, setFinishAttempt] = useState<FinishAttempt | undefined>();
+  const currentPullRequestKey = pullRequestKey(pullRequest);
+  const isActionInFlight = action !== null;
 
   useEffect(() => {
     let active = true;
@@ -77,35 +93,85 @@ export function ReviewScreen({
   }, []);
 
   const advanceAfterCheckpoint = (): void => {
-    const doneKey = pullRequestKey(pullRequest);
-    const next = queue.find((candidate) => {
-      const key = pullRequestKey(candidate);
-      if (key === doneKey) return false;
-      return reviewed[key] !== candidate.sourceCommit;
-    });
+    const currentIndex = queue.findIndex(
+      (candidate) => pullRequestKey(candidate) === currentPullRequestKey,
+    );
+    const next = currentIndex < 0 ? undefined : queue.slice(currentIndex + 1)[0];
     if (next) onSelectPullRequest(next);
     else onBack();
   };
 
-  const runAction = (
-    name: string,
-    operation: Effect.Effect<void, unknown>,
-    checkpoint = false,
-  ): void => {
-    setAction(name);
+  const finishFailureCopy = (stage: FinishReviewError["stage"]): string => {
+    switch (stage) {
+      case "head-before":
+        return "This pull request changed before finishing. Refresh and review it again.";
+      case "head-after":
+        return "This pull request changed while finishing. The review remains open.";
+      case "comment":
+        return "A review comment could not be sent. Try Finish Review again.";
+      case "decision":
+        return "The review decision could not be sent. Try Finish Review again.";
+      case "checkpoint":
+        return "The review was sent but could not be saved locally. Retry Finish Review to complete it.";
+    }
+  };
+
+  const finish = (outcome: FinishReviewOutcome): void => {
+    if (outcome !== "reviewed" && !provider.capabilities.canWriteReviews) return;
+    setQueueOpen(false);
+    setAction("Finish Review");
     setNotice(null);
-    void Effect.runPromise(operation)
+    const previousReceipt =
+      finishAttempt?.pullRequestKey === currentPullRequestKey && finishAttempt.outcome === outcome
+        ? finishAttempt.receipt
+        : undefined;
+    void finishReview(
+      {
+        pullRequestKey: currentPullRequestKey,
+        reviewedHeadCommit: pullRequest.sourceCommit,
+        comments: [],
+        outcome,
+        previousReceipt,
+      },
+      {
+        loadHead: async () => {
+          const pullRequests = await Effect.runPromise(
+            provider.listOpenPullRequests(pullRequest.ref.repository),
+          );
+          const current = pullRequests.find((candidate) => candidate.ref.id === pullRequest.ref.id);
+          if (!current) throw new Error("Pull request is no longer open.");
+          return current.sourceCommit;
+        },
+        sendComment: async () => undefined,
+        applyDecision: async (decision) => {
+          if (decision === "approved") {
+            await Effect.runPromise(provider.approvePullRequest(pullRequest.ref));
+          } else if (decision === "changes_requested") {
+            await Effect.runPromise(provider.requestChanges(pullRequest.ref));
+          }
+        },
+        saveCheckpoint,
+        now: () => new Date().toISOString(),
+      },
+    )
       .then(() => {
         setAction(null);
-        setNotice(`${name} sent.`);
-        if (checkpoint) {
-          onMarkReviewed(pullRequest);
-          advanceAfterCheckpoint();
-        }
+        setFinishOpen(false);
+        setFinishAttempt(undefined);
+        advanceAfterCheckpoint();
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         setAction(null);
-        setNotice(`${name} could not be sent.`);
+        if (error instanceof FinishReviewError) {
+          setFinishAttempt({
+            pullRequestKey: currentPullRequestKey,
+            outcome,
+            receipt: error.receipt,
+          });
+          setNotice(finishFailureCopy(error.stage));
+        } else {
+          setNotice("Finish Review could not be completed. Try again.");
+        }
       });
   };
 
@@ -137,7 +203,7 @@ export function ReviewScreen({
   return (
     <main className="review-page">
       <header className="review-toolbar">
-        <Button variant="secondary" onPress={onBack}>
+        <Button variant="secondary" isDisabled={isActionInFlight} onPress={onBack}>
           Back
         </Button>
         <div className="review-title">
@@ -150,37 +216,50 @@ export function ReviewScreen({
           </span>
         </div>
         <div className="review-actions">
-          <Button variant="secondary" onPress={() => setQueueOpen(true)}>
+          <Button
+            variant="secondary"
+            isDisabled={isActionInFlight}
+            onPress={() => setQueueOpen(true)}
+          >
             Queue ({queue.length})
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={action !== null}
-            onPress={() => runAction("Approve", provider.approvePullRequest(pullRequest.ref), true)}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="secondary"
-            isDisabled={action !== null}
-            onPress={() =>
-              runAction("Request changes", provider.requestChanges(pullRequest.ref), true)
-            }
-          >
-            Request changes
           </Button>
           <Button
             variant="primary"
             isDisabled={action !== null}
-            onPress={() => {
-              onMarkReviewed(pullRequest);
-              advanceAfterCheckpoint();
-            }}
+            onPress={() => setFinishOpen(true)}
           >
-            Mark reviewed
+            Finish Review
           </Button>
         </div>
       </header>
+      {finishOpen ? (
+        <section className="review-finish" role="dialog" aria-label="Finish Review">
+          <p>Choose how to finish this review.</p>
+          {provider.capabilities.canWriteReviews ? (
+            <>
+              <Button
+                variant="secondary"
+                isDisabled={action !== null}
+                onPress={() => finish("approved")}
+              >
+                Approve
+              </Button>
+              <Button
+                variant="secondary"
+                isDisabled={action !== null}
+                onPress={() => finish("changes_requested")}
+              >
+                Request changes
+              </Button>
+            </>
+          ) : (
+            <p>Remote review decisions are unavailable for this connection.</p>
+          )}
+          <Button variant="primary" isDisabled={action !== null} onPress={() => finish("reviewed")}>
+            Reviewed
+          </Button>
+        </section>
+      ) : null}
       {notice ? (
         <p className="review-notice" role="status">
           {notice}
@@ -266,6 +345,7 @@ export function ReviewScreen({
         currentIndex={queueIndex}
         isOpen={queueOpen}
         onSelect={(next) => {
+          if (isActionInFlight) return;
           setQueueOpen(false);
           onSelectPullRequest(next);
         }}
