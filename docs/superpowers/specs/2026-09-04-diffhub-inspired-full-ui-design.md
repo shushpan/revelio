@@ -98,7 +98,9 @@ No other package from the DiffHub manifest is adopted. Explicitly rejected, with
 
 ### 6.3 Unchanged, but reclassified
 
-`@pierre/theme`, `@pierre/theming`, and most of the Radix primitives already sit in `pnpm-lock.yaml` today, but only as transitive dependencies pulled in by `@heroui/react` — the application never imports them directly (verified: no `src/` import matches). `clsx` and `tailwind-merge` are in the same position. Once HeroUI is removed (RV-07), any of these three that the local primitive layer still needs (`clsx`, `tailwind-merge`, `@radix-ui/react-slot`) must already be **direct** dependencies with their own pinned versions — added starting at RV-00 (§20) precisely so their availability never depends on HeroUI still being present mid-migration. `@radix-ui/react-tabs`, `-dialog`, `-dropdown-menu`, and `-tooltip` are not already present transitively and are added fresh.
+`@pierre/theme` and `@pierre/theming` sit in `pnpm-lock.yaml` today as transitive dependencies of `@pierre/diffs` (verified: `pnpm-lock.yaml`'s `@pierre/diffs@1.3.6` dependency block lists both packages directly; `@heroui/react`'s own dependency block lists neither). Because `@pierre/diffs` is retained by this migration (Goal 2), both packages remain in the lockfile after RV-07 regardless of HeroUI's removal — **RV-07's bundle-budget measurement (§19) must not credit HeroUI removal with their byte weight**; only `@heroui/react`/`@heroui/styles` and whatever they alone pulled in are expected to shrink the bundle at that stage. This does not change the decision in §6.4: `@pierre/theme`/`@pierre/theming` stay present only as `@pierre/diffs`' own transitive dependencies, never as packages this product's code imports or calls directly.
+
+Most of the Radix primitives, plus `clsx` and `tailwind-merge`, are also already in `pnpm-lock.yaml` today, but as transitive dependencies pulled in by `@heroui/react` — the application never imports them directly (verified: no `src/` import matches). Once HeroUI is removed (RV-07), any of these that the local primitive layer still needs (`clsx`, `tailwind-merge`, `@radix-ui/react-slot`) must already be **direct** dependencies with their own pinned versions — added starting at RV-00 (§20) precisely so their availability never depends on HeroUI still being present mid-migration. `@radix-ui/react-tabs`, `-dialog`, `-dropdown-menu`, and `-tooltip` are not already present transitively and are added fresh.
 
 ### 6.4 `@pierre/theme` / `@pierre/theming` — explicit non-adoption
 
@@ -229,13 +231,21 @@ Inbox becomes a fullscreen, edge-to-edge dense list — the other screen, beside
 
 ## 11. Sidebar data flow — Tree / Description / Activity
 
-The sidebar is a Radix `Tabs` instance (`src/ui/Tabs.tsx`) with three triggers, each a 16 px `@pierre/icons` glyph plus tooltip plus accessible name, supporting ArrowLeft/ArrowRight per the base architecture's keyboard contract (§20). Switching tabs preserves each tab's own scroll position and internal state (search text, collapsed tree nodes, loaded activity) — tabs are kept mounted (`display: none` on the inactive panel, not unmounted) so state is not lost on switch, matching acceptance criterion 4 in §22.
+The sidebar is a Radix `Tabs` instance (`src/ui/Tabs.tsx`) with three triggers, each a 16 px `@pierre/icons` glyph plus tooltip plus accessible name, supporting ArrowLeft/ArrowRight per the base architecture's keyboard contract (§20). Switching tabs preserves each tab's own scroll position and internal state (search text, collapsed tree nodes, loaded activity) — tabs are kept mounted (`display: none` on the inactive panel, not unmounted) so state is not lost on switch, matching acceptance criterion 5 in §22.
+
+**Decision — Tree remeasurement on tab reactivation:** keeping the inactive `Tree` panel mounted at `display: none` conflicts with `@pierre/trees`' virtualization, which measures its scroll container's dimensions to decide which rows to render; a container with `display: none` reports zero size, so the virtualizer's cached measurements can go stale while hidden and produce missing or misaligned rows once the panel is shown again. This migration requires, in order of preference, checked once against the `@pierre/trees` version actually pinned at RV-02 kickoff (§20):
+
+1. If that pinned version exposes a documented refresh/resize/remeasure method on its tree ref/handle — verified against that version's own published API, not assumed or invented — `TreeTab` calls it in an effect keyed on the `Tree` tab's `data-state="active"` transition, before the panel becomes visible.
+2. If no such documented API exists in the pinned version, only `TreeTab`'s internal virtualized viewport component is remounted via a React `key` that changes on each `Tree`-tab activation, forcing a fresh measurement pass. Search text, expanded-node state, and the selected/highlighted row live in `TreeTab`'s (or `ReviewScreen`'s, matching `activePath`) own state, outside that viewport component, so remounting it discards only the virtualizer's internal row cache — never the tree's user-visible state.
+
+Either way, the requirement is behavioral, not a specific API name: correct rows and preserved search/expanded/selection state after repeated Tree ↔ other-tab cycling, verified by the test in §21.3.
 
 ### 11.1 Tree
 
 - New component `src/review/sidebar/TreeTab.tsx`, wrapping `@pierre/trees/react`.
 - Data source: the same file list `DiffReview.tsx` already derives from the parsed patch (`ParsedPatch`/`FileDiffMetadata`, per ADR 0001) — no new fetch or parsing step. `TreeTab` receives that file list as a prop from `ReviewScreen`, exactly where `FileTree` receives it today.
 - Configuration mirrors the measured reference exactly (§5): row height `24`, density override `0.8`, `8px` inline padding, `flattenEmptyDirectories: true`, `initialExpansion: "open"`, `presorted: true` (preserve patch order, do not alphabetize), sticky folders, built-in search.
+- Remeasurement on tab reactivation implements the requirement stated in §11 exactly: a documented `@pierre/trees` refresh/resize API if the pinned version exposes one, otherwise a remount key scoped to the internal virtualized viewport only, with search/expanded/selection state kept outside that component.
 - Selection: clicking a tree row calls `CodeViewHandle.scrollTo` with the file's stable item ID — the same stable-ID contract `DiffReview.tsx` already exposes via its `activePath`/`onActivePathChange` props (verified in the current component). `CodeView` scroll position updates the tree's highlighted row via the same `activePath` state, one level up in `ReviewScreen`, without stealing keyboard focus from whichever surface the user is interacting with (base architecture §19.1's "never steal keyboard focus during refresh" principle extended to this sync loop).
 - Addition/deletion totals stay in the diff's own sticky file headers, not duplicated onto every tree row (per the research report's explicit density guidance).
 
@@ -280,6 +290,11 @@ The Queue button opens a panel listing `queue` (the `PullRequestSummary[]` captu
 
 - **≥768px (`--bp-md`):** Review keeps the fixed 320px sidebar exactly as specified in §10. Inbox and the setup screens use their full-width/centered-card layouts as specified in §9.
 - **<768px:** Review's sidebar becomes a bottom-sheet overlay (a `Dialog`-based sheet, not a persistent column) triggered from a toolbar icon, containing the same `Tree`/`Description`/`Activity` tabs; the diff canvas defaults to `unified` (§12). The toolbar wraps onto a second row only below 768px — it never grows past 49px tall at ≥768px, matching the reference exactly.
+
+  **Decision — two-row toolbar composition below 768px** (§10.1's eight-item list no longer fits one 49px-tall row at narrow widths):
+  - **Row 1:** Back, the PR identity block, Finish Review — in that order. The PR identity block truncates its text (repository/PR title) to make room; it never displaces or hides Finish Review, which stays visible and clickable in Row 1 at every width down to 320px.
+  - **Row 2:** Queue, the split/unified toggle, collapse/expand-all, the Display dropdown, and the theme control, in that order.
+  - Both rows satisfy the base architecture's touch-target requirement (§17) via padding, not by exceeding 49px per row.
 - **<480px (`--bp-sm`):** Inbox rows and the Review toolbar's PR-identity block truncate further (already-established truncation behavior, now driven by the shared token instead of the ad hoc `680px` breakpoint in today's `src/styles.css:420`).
 - Touch targets expand via padding, not by increasing the 24px tree row height or 49px toolbar height on desktop — this is the base architecture's existing accessibility requirement (§20), carried forward unchanged.
 
@@ -353,7 +368,8 @@ Each stage is independently shippable and independently verifiable via `pnpm ver
 **Ownership:** delete `src/review/FileTree.tsx` and `src/review/Overview.tsx`; add `src/review/sidebar/{Sidebar,TreeTab,DescriptionTab,ActivityTab}.tsx`; add `@pierre/trees` to `package.json`.
 
 - Implement §11 exactly: tree configuration, description metadata block, lazily-loaded/cached activity.
-- Add tests: tree search/collapse/keyboard, tab-switch state preservation, activity loading/empty/error/retry.
+- Implement the Tree remeasurement requirement (§11): check the pinned `@pierre/trees` version's own documentation for a refresh/resize/remeasure API before assuming the remount-key fallback is needed; record which branch was taken.
+- Add tests: tree search/collapse/keyboard, tab-switch state preservation, activity loading/empty/error/retry, and correct Tree rows plus preserved search/expanded/selection state after at least two Tree → other tab → Tree cycles (§21.3).
 
 ### RV-03 — Diff canvas density and responsive defaults
 
@@ -395,7 +411,7 @@ Each stage is independently shippable and independently verifiable via `pnpm ver
 
 - Delete `@heroui/react` and `@heroui/styles` from `dependencies`.
 - Delete `@import "@heroui/styles";` from `src/styles.css`.
-- Run `pnpm install`, full `pnpm verify`, and the bundle-budget measurement from §19.
+- Run `pnpm install`, full `pnpm verify`, and the bundle-budget measurement from §19. Per §6.3, `@pierre/theme`/`@pierre/theming` remain in `pnpm-lock.yaml` as `@pierre/diffs`' own transitive dependencies — the measured delta at this stage is attributed to `@heroui/react`/`@heroui/styles` only, not to those two packages.
 - Update the base architecture document's superseded clauses (§4 of this document) to point at this document, or fold this document's content into it — an editorial follow-up, not a code change, and not required for RV-07 to be considered complete.
 
 ## 21. Testing strategy
@@ -421,7 +437,8 @@ The following existing assertions must continue to pass, updated only for DOM-se
 
 - Review layout invariants at 1280×720 and 1440×900 (49px toolbar, 320px sidebar ±1px, no visible global masthead).
 - Narrow Review layout at 390×844 (sidebar becomes a bottom sheet, diff defaults to unified).
-- Sidebar tab switching preserves per-tab state (tree search text, activity load) across at least two switches.
+- Toolbar row split at 390×844 (§15): Row 1 contains exactly Back, PR identity, and Finish Review, with Finish Review fully visible and clickable and the PR identity text truncated (not Finish Review pushed out or hidden); Row 2 contains exactly Queue, the split/unified toggle, collapse-all, Display, and theme.
+- Sidebar tab switching preserves per-tab state (tree search text, activity load) across at least two switches; for the `Tree` tab specifically, after at least two Tree → other tab → Tree cycles, every previously rendered row is present and correctly positioned (no missing/misaligned rows from stale virtualizer measurement under `display: none`, §11), and search text, expanded nodes, and the selected/highlighted row are all unchanged from before the cycling.
 - `Tree` tab: search, collapse/expand, keyboard navigation, selection-to-scroll sync in both directions (tree-click scrolls diff; diff-scroll highlights tree).
 - Split/unified default at ≥768px vs. <768px, and that a manual override persists across a tab switch within the same review.
 - Finish Review dialog: Escape closes without submitting, Cancel closes without submitting, drafts are visible in the dialog before submission, and the existing checkpoint-persistence/queue-advance assertions still hold with drafts routed through the dialog.
@@ -455,6 +472,7 @@ The migration is complete only when all of the following are true:
 | Risk | Decision / mitigation |
 |---|---|
 | `@pierre/trees` is a comparatively new library (per the research report's confidence notes) | Exact pin, adapter boundary confined to `src/review/sidebar/TreeTab.tsx`, unit + E2E coverage before RV-02 is considered done. `FileTree.tsx` is deleted only once `TreeTab.tsx` ships with equivalent coverage, not before. |
+| Keeping the inactive `Tree` panel mounted at `display: none` (§11) can leave `@pierre/trees`' virtualizer with stale, zero-size measurements, producing missing or misaligned rows when the panel is shown again | Documented refresh/resize API on the pinned version if one exists, otherwise a remount key scoped to the virtualized viewport only, with search/expanded/selection state kept outside it (§11, §11.1); verified by the two-cycle Tree ↔ other-tab test in §21.3 before RV-02 is considered done. |
 | Removing HeroUI mid-migration temporarily leaves two component systems in the tree (RV-00 through RV-06) | Accepted as the cost of a staged, independently-verifiable migration rather than a single flag-day rewrite; each stage still leaves the app in a fully working, fully tested state — this is explicitly preferred over an atomic big-bang swap per the base architecture's phase-gate discipline. |
 | Bundle budget headroom is currently thin (§19) | Budgets stay fixed; per-stage measurement is mandatory; a dedicated lazy chunk for tree/icon code is the designated mitigation before any budget number is touched, and any budget change requires its own ADR. |
 | Tree/diff selection could form a feedback loop (tree click scrolls diff, diff scroll re-selects tree, re-triggering a scroll) | Stable item IDs plus one-directional-at-a-time state updates (the update that originated a change is not echoed back into itself) — the same guard pattern the current `activePath`/`onActivePathChange` contract already uses, extended to the new `TreeTab`. |
