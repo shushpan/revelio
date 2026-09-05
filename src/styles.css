@@ -283,12 +283,21 @@ h2 {
 .review-toolbar-finish {
   grid-area: finish;
 }
+.review-toolbar-finish-wide {
+  display: none;
+}
 @media (min-width: 768px) {
   .review-toolbar {
     height: var(--toolbar-h);
     padding: 0 0.75rem;
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas: "back identity row2 finish";
+  }
+  .review-toolbar-finish-narrow {
+    display: none;
+  }
+  .review-toolbar-finish-wide {
+    display: inline-flex;
   }
 }
 .review-tabs {

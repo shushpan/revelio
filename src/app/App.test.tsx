@@ -675,7 +675,7 @@ describe("Revelio shell", () => {
     expect(screen.queryByRole("banner", { name: /revelio/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeEnabled();
     expect(screen.getByRole("button", { name: /Queue \(/ })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Finish Review" })).toBeVisible();
+    expect(screen.getAllByRole("button", { name: "Finish Review" })).toHaveLength(2);
   });
 
   it("resumes from the trusted browser vault on reload before the seven-day expiry", async () => {
@@ -970,7 +970,8 @@ describe("Revelio shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
     fireEvent.click(await screen.findByText("Finish without reopening"));
-    fireEvent.click(await screen.findByRole("button", { name: "Finish Review" }));
+    const [finishButton] = await screen.findAllByRole("button", { name: "Finish Review" });
+    fireEvent.click(finishButton);
     fireEvent.click(await screen.findByRole("button", { name: "Reviewed" }));
 
     await waitFor(() =>

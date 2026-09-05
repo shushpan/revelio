@@ -58,6 +58,10 @@ const provider = (
   ...overrides,
 });
 
+function clickFinish(): void {
+  fireEvent.click(screen.getAllByRole("button", { name: "Finish Review" })[0]);
+}
+
 describe("ReviewScreen", () => {
   afterEach(() => cleanup());
 
@@ -82,7 +86,7 @@ describe("ReviewScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
 
     await waitFor(() => expect(onSelectPullRequest).toHaveBeenCalledWith(last));
@@ -111,7 +115,7 @@ describe("ReviewScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
 
@@ -129,7 +133,7 @@ describe("ReviewScreen", () => {
         saveCheckpoint={saveCheckpoint}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(2));
@@ -158,7 +162,7 @@ describe("ReviewScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
@@ -191,7 +195,7 @@ describe("ReviewScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
 
     await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
@@ -233,7 +237,7 @@ describe("ReviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
     expect(screen.getByRole("dialog", { name: "Review queue" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
 
     await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
@@ -291,7 +295,7 @@ describe("ReviewScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    clickFinish();
 
     expect(
       screen.getByText("Remote review decisions are unavailable for this connection."),

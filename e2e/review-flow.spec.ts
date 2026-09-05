@@ -287,6 +287,57 @@ test("Review is a full-viewport workspace with a 49px toolbar and no global mast
   }
 });
 
+test("keeps toolbar keyboard focus order monotonic with exactly one visible Finish Review button at each breakpoint", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+  await expect(page.getByRole("button", { name: "Finish Review" })).toBeVisible();
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1280, height: 720 },
+  ]) {
+    await page.setViewportSize(viewport);
+
+    // Two Finish buttons exist in the DOM (one per breakpoint), but display:none removes
+    // the inactive one from the accessibility tree, so getByRole only ever resolves one.
+    await expect(page.locator("button.review-toolbar-finish")).toHaveCount(2);
+    await expect(page.getByRole("button", { name: "Finish Review" })).toHaveCount(1);
+
+    await page.getByRole("button", { name: "Back to inbox" }).focus();
+    let previous = await page
+      .locator(":focus")
+      .evaluate((element) => element.getBoundingClientRect().toJSON());
+
+    for (;;) {
+      await page.keyboard.press("Tab");
+      const stillInToolbar = await page
+        .locator(":focus")
+        .evaluate((element) => element.closest(".review-toolbar") !== null);
+      if (!stillInToolbar) break;
+
+      const current = await page
+        .locator(":focus")
+        .evaluate((element) => element.getBoundingClientRect().toJSON());
+      const movedToNewRow = current.top > previous.top;
+      const advancedWithinRow = current.top === previous.top && current.left >= previous.left;
+      expect(movedToNewRow || advancedWithinRow).toBe(true);
+      previous = current;
+    }
+  }
+});
+
 test("Finish Review persists the review checkpoint before advancing the captured queue", async ({
   page,
 }) => {

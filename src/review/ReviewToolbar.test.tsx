@@ -39,13 +39,17 @@ describe("ReviewToolbar", () => {
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeEnabled();
     expect(screen.getByText("acme/review #7")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Queue (2)" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Finish Review" })).toBeVisible();
+    const finishButtons = screen.getAllByRole("button", { name: "Finish Review" });
+    expect(finishButtons).toHaveLength(2);
+    for (const finishButton of finishButtons) {
+      expect(finishButton).toBeVisible();
+    }
 
     fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
     expect(onBack).toHaveBeenCalledOnce();
 
     fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
-    fireEvent.click(screen.getByRole("button", { name: "Finish Review" }));
+    fireEvent.click(finishButtons[0]);
   });
 
   it("labels and tooltips the layout, collapse, and display controls Task 3 will wire, disabled for now", () => {
@@ -86,7 +90,9 @@ describe("ReviewToolbar", () => {
 
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Queue (1)" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Finish Review" })).toBeDisabled();
+    for (const finishButton of screen.getAllByRole("button", { name: "Finish Review" })) {
+      expect(finishButton).toBeDisabled();
+    }
   });
 
   it("exposes the Back tooltip accessibly when the icon button receives focus", async () => {
@@ -109,7 +115,7 @@ describe("ReviewToolbar", () => {
     expect(await screen.findByRole("tooltip", { name: "Back to inbox" })).toBeInTheDocument();
   });
 
-  it("orders Finish before the row2 controls in the DOM so Tab does not jump back to row 1 at narrow widths", () => {
+  it("renders a narrow Finish before row2 and a wide Finish after row2, so each breakpoint's visible button is tab-reachable in visual order", () => {
     const { container } = render(
       <ReviewToolbar
         pullRequest={pullRequest}
@@ -124,10 +130,12 @@ describe("ReviewToolbar", () => {
       />,
     );
 
-    const order = Array.from(container.querySelectorAll("button")).map(
-      (button) => button.getAttribute("aria-label") ?? button.textContent,
-    );
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const order = buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent);
 
+    // The narrow instance sits right after Back (row 1 at <768px); the wide instance sits
+    // after row2 (rightmost slot at >=768px). Only one of the two is display:none at a
+    // given breakpoint, so Tab always reaches exactly one of them in visual order.
     expect(order).toEqual([
       "Back to inbox",
       "Finish Review",
@@ -139,7 +147,10 @@ describe("ReviewToolbar", () => {
       "System",
       "Light",
       "Dark",
+      "Finish Review",
     ]);
+    expect(buttons[1].className).toContain("review-toolbar-finish-narrow");
+    expect(buttons[buttons.length - 1].className).toContain("review-toolbar-finish-wide");
   });
 
   it("fires the split, unified, collapse, and display callbacks when supplied and enables their controls", async () => {

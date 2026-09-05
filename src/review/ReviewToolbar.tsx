@@ -113,7 +113,7 @@ export function ReviewToolbar({
           variant="primary"
           disabled={busy}
           onClick={onFinish}
-          className="review-toolbar-finish"
+          className="review-toolbar-finish review-toolbar-finish-narrow"
         >
           Finish Review
         </Button>
@@ -161,6 +161,14 @@ export function ReviewToolbar({
           </DropdownMenu>
           <ThemeControl theme={theme} resolvedTheme={resolvedTheme} onThemeChange={onThemeChange} />
         </div>
+        <Button
+          variant="primary"
+          disabled={busy}
+          onClick={onFinish}
+          className="review-toolbar-finish review-toolbar-finish-wide"
+        >
+          Finish Review
+        </Button>
       </header>
     </TooltipProvider>
   );
