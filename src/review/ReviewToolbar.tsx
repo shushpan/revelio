@@ -67,6 +67,10 @@ export interface ReviewToolbarProps {
   readonly theme: ThemeChoice;
   readonly resolvedTheme: "light" | "dark";
   readonly onThemeChange: (theme: ThemeChoice) => void;
+  readonly onSplitView?: () => void;
+  readonly onUnifiedView?: () => void;
+  readonly onCollapseAll?: () => void;
+  readonly displayOptions?: ReactNode;
 }
 
 export function ReviewToolbar({
@@ -79,6 +83,10 @@ export function ReviewToolbar({
   theme,
   resolvedTheme,
   onThemeChange,
+  onSplitView,
+  onUnifiedView,
+  onCollapseAll,
+  displayOptions,
 }: ReviewToolbarProps): JSX.Element {
   return (
     <TooltipProvider>
@@ -101,31 +109,6 @@ export function ReviewToolbar({
             {pullRequest.title}
           </h2>
         </div>
-        <div className="review-toolbar-row2">
-          <Button variant="secondary" disabled={busy} onClick={onQueue}>
-            Queue ({queueCount})
-          </Button>
-          <div className="flex items-center gap-1">
-            <IconButton label="Split view" tooltip="Split view" disabled>
-              <SplitViewIcon />
-            </IconButton>
-            <IconButton label="Unified view" tooltip="Unified view" disabled>
-              <UnifiedViewIcon />
-            </IconButton>
-          </div>
-          <IconButton label="Collapse all files" tooltip="Collapse all files" disabled>
-            <CollapseAllIcon />
-          </IconButton>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <IconButton label="Display options" tooltip="Display options" disabled>
-                <DisplayOptionsIcon />
-              </IconButton>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent />
-          </DropdownMenu>
-          <ThemeControl theme={theme} resolvedTheme={resolvedTheme} onThemeChange={onThemeChange} />
-        </div>
         <Button
           variant="primary"
           disabled={busy}
@@ -134,6 +117,50 @@ export function ReviewToolbar({
         >
           Finish Review
         </Button>
+        <div className="review-toolbar-row2">
+          <Button variant="secondary" disabled={busy} onClick={onQueue}>
+            Queue ({queueCount})
+          </Button>
+          <div className="flex items-center gap-1">
+            <IconButton
+              label="Split view"
+              tooltip="Split view"
+              disabled={busy || !onSplitView}
+              onClick={onSplitView}
+            >
+              <SplitViewIcon />
+            </IconButton>
+            <IconButton
+              label="Unified view"
+              tooltip="Unified view"
+              disabled={busy || !onUnifiedView}
+              onClick={onUnifiedView}
+            >
+              <UnifiedViewIcon />
+            </IconButton>
+          </div>
+          <IconButton
+            label="Collapse all files"
+            tooltip="Collapse all files"
+            disabled={busy || !onCollapseAll}
+            onClick={onCollapseAll}
+          >
+            <CollapseAllIcon />
+          </IconButton>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton
+                label="Display options"
+                tooltip="Display options"
+                disabled={busy || !displayOptions}
+              >
+                <DisplayOptionsIcon />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>{displayOptions}</DropdownMenuContent>
+          </DropdownMenu>
+          <ThemeControl theme={theme} resolvedTheme={resolvedTheme} onThemeChange={onThemeChange} />
+        </div>
       </header>
     </TooltipProvider>
   );

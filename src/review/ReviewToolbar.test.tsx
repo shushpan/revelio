@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PullRequestSummary } from "../providers/contracts";
+import { DropdownMenuItem } from "../ui/DropdownMenu";
 import { ReviewToolbar } from "./ReviewToolbar";
 
 const pullRequest: PullRequestSummary = {
@@ -106,5 +107,101 @@ describe("ReviewToolbar", () => {
     fireEvent.focus(screen.getByRole("button", { name: "Back to inbox" }));
 
     expect(await screen.findByRole("tooltip", { name: "Back to inbox" })).toBeInTheDocument();
+  });
+
+  it("orders Finish before the row2 controls in the DOM so Tab does not jump back to row 1 at narrow widths", () => {
+    const { container } = render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={2}
+        busy={false}
+        onBack={vi.fn()}
+        onQueue={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    const order = Array.from(container.querySelectorAll("button")).map(
+      (button) => button.getAttribute("aria-label") ?? button.textContent,
+    );
+
+    expect(order).toEqual([
+      "Back to inbox",
+      "Finish Review",
+      "Queue (2)",
+      "Split view",
+      "Unified view",
+      "Collapse all files",
+      "Display options",
+      "System",
+      "Light",
+      "Dark",
+    ]);
+  });
+
+  it("fires the split, unified, collapse, and display callbacks when supplied and enables their controls", async () => {
+    const onSplitView = vi.fn();
+    const onUnifiedView = vi.fn();
+    const onCollapseAll = vi.fn();
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={0}
+        busy={false}
+        onBack={vi.fn()}
+        onQueue={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+        onSplitView={onSplitView}
+        onUnifiedView={onUnifiedView}
+        onCollapseAll={onCollapseAll}
+        displayOptions={<DropdownMenuItem onSelect={vi.fn()}>Line numbers</DropdownMenuItem>}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Split view" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Unified view" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Collapse all files" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Display options" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unified view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all files" }));
+    expect(onSplitView).toHaveBeenCalledOnce();
+    expect(onUnifiedView).toHaveBeenCalledOnce();
+    expect(onCollapseAll).toHaveBeenCalledOnce();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Display options" }), { button: 0 });
+    expect(await screen.findByRole("menuitem", { name: "Line numbers" })).toBeInTheDocument();
+  });
+
+  it("keeps split, unified, collapse, and display disabled while busy even when callbacks are supplied", () => {
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={0}
+        busy
+        onBack={vi.fn()}
+        onQueue={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+        onSplitView={vi.fn()}
+        onUnifiedView={vi.fn()}
+        onCollapseAll={vi.fn()}
+        displayOptions={<DropdownMenuItem onSelect={vi.fn()}>Line numbers</DropdownMenuItem>}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Split view" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Unified view" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Collapse all files" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Display options" })).toBeDisabled();
   });
 });
