@@ -120,6 +120,30 @@ export function DiffReview({
     }));
   }, [prepared, collapsedAll]);
 
+  // Diff-to-tree sync (§11.1 fix round item 1): derive the file at the top of the
+  // viewport from the real CodeView scroll position via the documented
+  // `getTopForItem` API, rather than a synthetic test-only trigger. Guarded by the
+  // same `lastReportedPathRef` used for the tree-to-diff direction, so this can
+  // never itself cause a redundant scrollTo when echoed back in as `activePath`.
+  const handleScroll = (
+    scrollTop: number,
+    viewer: { getTopForItem(id: string): number | undefined },
+  ): void => {
+    if (!prepared) return;
+    let currentPath: string | null = null;
+    for (const file of prepared.files) {
+      const top = viewer.getTopForItem(file.id);
+      if (top === undefined) continue;
+      if (top <= scrollTop) currentPath = file.path;
+      else break;
+    }
+    currentPath ??= prepared.files[0]?.path ?? null;
+    if (currentPath === null || currentPath === lastReportedPathRef.current) return;
+    lastReportedPathRef.current = currentPath;
+    setInternalActivePath(currentPath);
+    onActivePathChange?.(currentPath);
+  };
+
   const activeFile = prepared?.files.find((file) => file.path === activePath) ?? prepared?.files[0];
   const inlineComment =
     activeFile?.firstChangedLine !== undefined && activeFile.firstChangedSide !== undefined
@@ -156,6 +180,7 @@ export function DiffReview({
               ref={codeViewRef}
               items={items}
               disableWorkerPool={disableWorkerPool}
+              onScroll={handleScroll}
               options={{
                 diffStyle: layout,
                 themeType,

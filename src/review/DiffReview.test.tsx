@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DiffReview } from "./DiffReview";
 
 const scrollToCalls: unknown[] = [];
+let capturedOnScroll: ((scrollTop: number, viewer: unknown) => void) | undefined;
 
 vi.mock("@pierre/diffs/react", () => ({
   CodeView: forwardRef(function CodeView(
@@ -11,16 +12,19 @@ vi.mock("@pierre/diffs/react", () => ({
       options,
       items,
       disableWorkerPool,
+      onScroll,
     }: {
       options: unknown;
       items: unknown;
       disableWorkerPool: unknown;
+      onScroll?: (scrollTop: number, viewer: unknown) => void;
     },
     ref: Ref<{ scrollTo: (target: unknown) => void }>,
   ) {
     useImperativeHandle(ref, () => ({
       scrollTo: (target: unknown) => scrollToCalls.push(target),
     }));
+    capturedOnScroll = onScroll;
     return (
       <div
         data-options={JSON.stringify(options)}
@@ -85,6 +89,7 @@ describe("DiffReview", () => {
   afterEach(() => {
     cleanup();
     scrollToCalls.length = 0;
+    capturedOnScroll = undefined;
   });
 
   it("renders a dense CodeView with a 1px inter-file gap and the controlled layout", async () => {
@@ -248,6 +253,41 @@ describe("DiffReview", () => {
     );
 
     expect(scrollToCalls.length).toBeGreaterThan(scrollsAfterInitialReport);
+  });
+
+  it("derives the active file from the real wired CodeView onScroll callback and reports it upward", async () => {
+    const onActivePathChange = vi.fn();
+    render(
+      <DiffReview
+        patch={patch}
+        themeType="light"
+        layout="unified"
+        activePath={null}
+        onActivePathChange={onActivePathChange}
+      />,
+    );
+
+    const items = await readItems();
+    const alphaId = items[0].id as string;
+    const zetaId = items[1].id as string;
+    await waitFor(() => expect(onActivePathChange).toHaveBeenCalledWith("src/alpha.ts"));
+    onActivePathChange.mockClear();
+    const scrollsBeforeScroll = scrollToCalls.length;
+
+    // Production-path scroll: invoke the actual onScroll callback DiffReview wired into
+    // CodeView, with a fake viewer exposing only the documented getTopForItem API.
+    const viewer = {
+      getTopForItem: (id: string) => (id === alphaId ? 0 : id === zetaId ? 400 : undefined),
+    };
+    capturedOnScroll?.(450, viewer);
+
+    expect(onActivePathChange).toHaveBeenCalledWith("src/zeta.ts");
+    // A diff-originated update must not echo a scrollTo call back into CodeView.
+    expect(scrollToCalls.length).toBe(scrollsBeforeScroll);
+
+    onActivePathChange.mockClear();
+    capturedOnScroll?.(10, viewer);
+    expect(onActivePathChange).toHaveBeenCalledWith("src/alpha.ts");
   });
 
   it("passes the resolved native theme type without a custom theme marker", async () => {

@@ -70,6 +70,7 @@ export interface ReviewToolbarProps {
   readonly onSplitView?: () => void;
   readonly onUnifiedView?: () => void;
   readonly onCollapseAll?: () => void;
+  readonly collapsedAll?: boolean;
   readonly displayOptions?: ReactNode;
 }
 
@@ -86,8 +87,10 @@ export function ReviewToolbar({
   onSplitView,
   onUnifiedView,
   onCollapseAll,
+  collapsedAll = false,
   displayOptions,
 }: ReviewToolbarProps): JSX.Element {
+  const collapseAllLabel = collapsedAll ? "Expand all files" : "Collapse all files";
   return (
     <TooltipProvider>
       <header className="review-toolbar">
@@ -140,8 +143,9 @@ export function ReviewToolbar({
             </IconButton>
           </div>
           <IconButton
-            label="Collapse all files"
-            tooltip="Collapse all files"
+            label={collapseAllLabel}
+            tooltip={collapseAllLabel}
+            aria-pressed={collapsedAll}
             disabled={busy || !onCollapseAll}
             onClick={onCollapseAll}
           >

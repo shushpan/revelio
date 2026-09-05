@@ -22,6 +22,7 @@ class FakeFileTree {
   readonly resetCalls: FakeResetArg[] = [];
   readonly gitStatusCalls: FakeGitStatusPatch[] = [];
   readonly selectCalls: string[] = [];
+  readonly scrollToPathCalls: Array<{ readonly path: string; readonly focus?: boolean }> = [];
 
   constructor(options: {
     readonly preparedInput?: { readonly paths: readonly string[] };
@@ -55,6 +56,10 @@ class FakeFileTree {
         this.selectCalls.push(path);
       },
     };
+  }
+
+  scrollToPath(path: string, options?: { readonly focus?: boolean }): void {
+    this.scrollToPathCalls.push({ path, focus: options?.focus });
   }
 
   simulateUserSelect(path: string): void {
@@ -143,6 +148,24 @@ describe("TreeTab", () => {
 
     expect(lastModel().selectCalls).toEqual(["src/b/three.ts"]);
     expect(onSelectPath).not.toHaveBeenCalled();
+  });
+
+  it("scrolls an off-screen externally selected path into view without stealing focus", () => {
+    const onSelectPath = vi.fn();
+    const { rerender } = render(
+      <TreeTab files={files} selectedPath={null} onSelectPath={onSelectPath} active={false} />,
+    );
+
+    rerender(
+      <TreeTab
+        files={files}
+        selectedPath="src/b/three.ts"
+        onSelectPath={onSelectPath}
+        active={false}
+      />,
+    );
+
+    expect(lastModel().scrollToPathCalls).toEqual([{ path: "src/b/three.ts", focus: undefined }]);
   });
 
   it("reports a user-originated tree selection without feeding it back into the model", () => {

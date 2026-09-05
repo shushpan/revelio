@@ -367,6 +367,11 @@ h2 {
   padding: 0.4rem;
   border-bottom: 1px solid var(--border);
 }
+.sidebar-tab-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
 .sidebar-tab-panel {
   min-height: 0;
   overflow-y: auto;
@@ -459,6 +464,10 @@ h2 {
 }
 .description-empty {
   margin: 0;
+  color: var(--muted);
+}
+.description-status {
+  margin: 0 0 0.9rem;
   color: var(--muted);
 }
 .activity-list {

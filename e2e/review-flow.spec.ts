@@ -462,6 +462,55 @@ test("narrow viewports open the sidebar as a bottom sheet and default the diff t
   await expect(page.getByRole("tab", { name: "Tree" })).not.toBeVisible();
 });
 
+test("the narrow sidebar sheet is a real dialog: focus enters it, Tab never escapes, and Escape returns focus to the trigger", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  // Closed: no exposed tree/tab controls at all — never a duplicate desktop copy
+  // sitting inert-but-present alongside the sheet's own instance.
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+
+  const openTrigger = page.getByRole("button", { name: "Open sidebar" });
+  await openTrigger.click();
+
+  const dialog = page.getByRole("dialog", { name: "Review sidebar" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-modal", "true");
+  await expect(page.getByRole("tab", { name: "Tree" })).toBeFocused();
+  await expect(page.getByRole("tablist")).toHaveCount(1);
+
+  // Real Tab-key traversal (native browser behavior, not a synthetic keydown):
+  // however many stops it takes inside the sheet, focus must never leave it —
+  // proving both the `inert` background suppression and the focus-recapture
+  // fallback hold up under the browser's own focus-order algorithm.
+  for (let step = 0; step < 15; step += 1) {
+    await page.keyboard.press("Tab");
+    // Polled, not a one-shot check: the recapture fallback (for the case where
+    // native Tab traversal runs out of candidates and drops focus to <body>
+    // instead of wrapping) corrects itself on a deferred tick, not synchronously.
+    await expect
+      .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+      .toBe(true);
+  }
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(openTrigger).toBeFocused();
+});
+
 test("a manual split/unified override persists across a tab switch within the same review", async ({
   page,
 }) => {

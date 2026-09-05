@@ -1,13 +1,26 @@
-import { type JSX, lazy, Suspense, useEffect, useRef, useState } from "react";
+import { Effect } from "effect";
+import {
+  type JSX,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { CodeReviewProvider, PullRequestSummary } from "../../providers/contracts";
 import { IconButton } from "../../ui/IconButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/Tabs";
+import { TooltipProvider } from "../../ui/Tooltip";
 import type { PreparedPatchFile } from "../patch";
 import { type ActivityState, ActivityTab } from "./ActivityTab";
 import { DescriptionTab } from "./DescriptionTab";
 
 // @pierre/trees is large; keep it out of the main ReviewScreen chunk (§19).
 const TreeTab = lazy(() => import("./TreeTab").then((module) => ({ default: module.TreeTab })));
+
+const SIDEBAR_TRIGGER_ID = "sidebar-open-trigger";
 
 function TreeTabSkeleton(): JSX.Element {
   return (
@@ -19,6 +32,46 @@ function TreeTabSkeleton(): JSX.Element {
     </div>
   );
 }
+
+// ponytail: @pierre/icons@0.7.1's dist/index.js re-exports "./types" without a file
+// extension, which Node/Vitest ESM resolution rejects (verified: fails even in plain
+// `node --input-type=module`, same failure as Task 2's ReviewToolbar). Inline SVGs
+// sidestep that broken package until it ships a fixed release.
+function TabGlyph({ children }: { readonly children: ReactNode }): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const TreeGlyph = (): JSX.Element => (
+  <TabGlyph>
+    <rect x="2" y="2" width="5" height="5" rx="1" />
+    <path d="M4.5 7v3a1 1 0 0 0 1 1H12M12 9v3" />
+  </TabGlyph>
+);
+const DescriptionGlyph = (): JSX.Element => (
+  <TabGlyph>
+    <rect x="3" y="2" width="10" height="12" rx="1" />
+    <path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3" />
+  </TabGlyph>
+);
+const ActivityGlyph = (): JSX.Element => (
+  <TabGlyph>
+    <path d="M2 8h3l2 4 3-8 2 4h2" />
+  </TabGlyph>
+);
 
 function SidebarTriggerIcon(): JSX.Element {
   return (
@@ -37,6 +90,31 @@ function SidebarTriggerIcon(): JSX.Element {
       <path d="M6 2v12" />
     </svg>
   );
+}
+
+/** Marks every sibling of every ancestor of `preserve`, up to (not including)
+ * `document.body`, as `inert` — the native way to suppress background
+ * interaction/focus for everything except `preserve`'s own branch, without a
+ * focus-trap dependency (fix round item 2). Returns the elements this call
+ * itself inerted, so the caller can precisely undo only those. */
+function inertOutside(preserve: HTMLElement): HTMLElement[] {
+  const toggled: HTMLElement[] = [];
+  let node: HTMLElement | null = preserve;
+  while (node && node !== document.body) {
+    const parent: HTMLElement | null = node.parentElement;
+    if (!parent) break;
+    for (const sibling of Array.from(parent.children)) {
+      if (sibling === node || !(sibling instanceof HTMLElement) || sibling.hasAttribute("inert"))
+        continue;
+      // Plain attribute, not the `.inert` IDL property: this project's pinned
+      // TypeScript DOM lib does not yet declare `HTMLElement.inert` (verified:
+      // no match for it anywhere in node_modules/typescript/lib/*.d.ts).
+      sibling.setAttribute("inert", "");
+      toggled.push(sibling);
+    }
+    node = parent;
+  }
+  return toggled;
 }
 
 export interface SidebarProps {
@@ -59,14 +137,35 @@ export function Sidebar({
   provider,
 }: SidebarProps): JSX.Element {
   const [tab, setTab] = useState<SidebarTab>("tree");
-  // Owned for the lifetime of this open review: ReviewScreen remounts Sidebar
-  // (via its own per-PR `key`) whenever the reviewed pull request changes.
-  const activityCacheRef = useRef(new Map<string, ActivityState>());
-  const [activitySignals, setActivitySignals] = useState<ActivityState | undefined>(undefined);
+  // Shared per-PR lazy load (fix round item 3): Description and Activity both
+  // read this one state; whichever tab is activated first starts the one
+  // request `getReviewSignals` makes for the lifetime of this open review
+  // (ReviewScreen remounts Sidebar via a per-PR `key`, so a single flag below —
+  // not a cache keyed by PR ref — is enough; this component never sees a second PR).
+  const [signalsState, setSignalsState] = useState<ActivityState | undefined>(undefined);
+  const requestedRef = useRef(false);
   // <768px only (§15): the persistent column becomes a bottom sheet. Same
   // mounted Tabs tree either way — only its CSS presentation and this open
   // state differ, so Tree/Description/Activity state survives the transition.
   const [sheetOpen, setSheetOpen] = useState(false);
+  const sheetGroupRef = useRef<HTMLDivElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const wasSheetOpenRef = useRef(false);
+  const inertedRef = useRef<HTMLElement[]>([]);
+
+  const loadSignals = useCallback((): void => {
+    requestedRef.current = true;
+    setSignalsState({ status: "loading" });
+    void Effect.runPromise(provider.getReviewSignals(pullRequest.ref))
+      .then((signals) => setSignalsState({ status: "loaded", signals }))
+      .catch(() => setSignalsState({ status: "error", error: "Unable to load review activity." }));
+  }, [provider, pullRequest]);
+
+  useEffect(() => {
+    if (requestedRef.current) return;
+    if (tab !== "description" && tab !== "activity") return;
+    loadSignals();
+  }, [tab, loadSignals]);
 
   useEffect(() => {
     if (!sheetOpen) return;
@@ -77,9 +176,64 @@ export function Sidebar({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [sheetOpen]);
 
+  // Initial focus on open; focus return to the trigger on close (fix round item 2).
+  useEffect(() => {
+    if (sheetOpen) {
+      wasSheetOpenRef.current = true;
+      const activeTrigger = sheetRef.current?.querySelector<HTMLElement>(
+        '[role="tab"][data-state="active"]',
+      );
+      (activeTrigger ?? sheetRef.current)?.focus();
+    } else if (wasSheetOpenRef.current) {
+      wasSheetOpenRef.current = false;
+      document.getElementById(SIDEBAR_TRIGGER_ID)?.focus();
+    }
+  }, [sheetOpen]);
+
+  // Background interaction/focus suppression while the sheet is open (fix round
+  // item 2): native `inert`, not a duplicated tree/second Dialog instance.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const group = sheetGroupRef.current;
+    if (!group) return;
+    inertedRef.current = inertOutside(group);
+    return () => {
+      for (const element of inertedRef.current) element.removeAttribute("inert");
+      inertedRef.current = [];
+    };
+  }, [sheetOpen]);
+
+  // Tab trap (fix round item 2): re-capture focus if it ever ends up outside the
+  // sheet, rather than hand-computing Radix's roving-tabindex "first"/"last"
+  // trigger for a Tab/Shift+Tab keydown handler — that computation went wrong in
+  // practice (the two non-current tab triggers are `tabIndex={-1}`, so real Tab
+  // presses never reach them at all; only ArrowLeft/ArrowRight do). Listens on
+  // `focusout`, not `focusin`: verified in a real browser that once every
+  // sibling is `inert`, tabbing past the sheet's last focusable descendant does
+  // not wrap to anything — it drops `document.activeElement` to `<body>` with no
+  // corresponding `focusin` anywhere, so only the outgoing `focusout` reliably
+  // fires; the check is deferred one tick because the browser hasn't necessarily
+  // settled the new `document.activeElement` yet when `focusout` itself fires.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onFocusOut = (): void => {
+      window.setTimeout(() => {
+        const active = document.activeElement;
+        if (active instanceof Node && sheetRef.current?.contains(active)) return;
+        const activeTrigger = sheetRef.current?.querySelector<HTMLElement>(
+          '[role="tab"][data-state="active"]',
+        );
+        (activeTrigger ?? sheetRef.current)?.focus();
+      }, 0);
+    };
+    document.addEventListener("focusout", onFocusOut);
+    return () => document.removeEventListener("focusout", onFocusOut);
+  }, [sheetOpen]);
+
   return (
-    <>
+    <TooltipProvider>
       <IconButton
+        id={SIDEBAR_TRIGGER_ID}
         label="Open sidebar"
         tooltip="Files"
         className="sidebar-trigger"
@@ -87,53 +241,78 @@ export function Sidebar({
       >
         <SidebarTriggerIcon />
       </IconButton>
-      {sheetOpen ? (
-        <button
-          type="button"
-          aria-label="Close sidebar"
-          className="sidebar-sheet-backdrop"
-          onClick={() => setSheetOpen(false)}
-        />
-      ) : null}
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as SidebarTab)}
-        className="sidebar"
-        data-sheet-open={sheetOpen}
-        aria-label="Review sidebar"
-      >
-        <TabsList aria-label="Sidebar sections">
-          <TabsTrigger value="tree">Tree</TabsTrigger>
-          <TabsTrigger value="description">Description</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
-        <TabsContent value="tree" forceMount className="sidebar-tab-panel">
-          <Suspense fallback={<TreeTabSkeleton />}>
-            <TreeTab
-              files={files}
-              selectedPath={selectedPath}
-              onSelectPath={onSelectPath}
-              active={tab === "tree"}
+      <div ref={sheetGroupRef}>
+        {sheetOpen ? (
+          <button
+            type="button"
+            aria-label="Close sidebar"
+            className="sidebar-sheet-backdrop"
+            onClick={() => setSheetOpen(false)}
+          />
+        ) : null}
+        <Tabs
+          ref={sheetRef}
+          value={tab}
+          onValueChange={(value) => setTab(value as SidebarTab)}
+          className="sidebar"
+          data-sheet-open={sheetOpen}
+          aria-label="Review sidebar"
+          role={sheetOpen ? "dialog" : undefined}
+          aria-modal={sheetOpen ? true : undefined}
+          tabIndex={sheetOpen ? -1 : undefined}
+        >
+          {/* Fix round item 4: a plain native `title`, not the shared Radix Tooltip
+              wrapper, because Tooltip.Trigger's `asChild` clone writes its own
+              `data-state` (open/closed) onto the cloned node, overriding — not
+              composing with — Tabs.Trigger's own `data-state` (active/inactive)
+              that the CSS active-tab indicator and this focus-management code
+              both depend on (verified: rendered DOM showed `data-state="closed"`
+              on the Tree trigger, permanently masking which tab is active). */}
+          <TabsList aria-label="Sidebar sections">
+            <TabsTrigger value="tree" className="sidebar-tab-trigger" title="Browse changed files">
+              <TreeGlyph />
+              <span>Tree</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="description"
+              className="sidebar-tab-trigger"
+              title="Pull request description and reviewers"
+            >
+              <DescriptionGlyph />
+              <span>Description</span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="activity"
+              className="sidebar-tab-trigger"
+              title="Review activity timeline"
+            >
+              <ActivityGlyph />
+              <span>Activity</span>
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="tree" forceMount className="sidebar-tab-panel">
+            <Suspense fallback={<TreeTabSkeleton />}>
+              <TreeTab
+                files={files}
+                selectedPath={selectedPath}
+                onSelectPath={onSelectPath}
+                active={tab === "tree"}
+              />
+            </Suspense>
+          </TabsContent>
+          <TabsContent value="description" forceMount className="sidebar-tab-panel">
+            <DescriptionTab
+              pullRequest={pullRequest}
+              currentUserId={currentUserId}
+              signalsState={signalsState}
+              onRetry={loadSignals}
             />
-          </Suspense>
-        </TabsContent>
-        <TabsContent value="description" forceMount className="sidebar-tab-panel">
-          <DescriptionTab
-            pullRequest={pullRequest}
-            currentUserId={currentUserId}
-            signals={activitySignals?.signals ?? []}
-          />
-        </TabsContent>
-        <TabsContent value="activity" forceMount className="sidebar-tab-panel">
-          <ActivityTab
-            provider={provider}
-            pullRequest={pullRequest}
-            active={tab === "activity"}
-            cache={activityCacheRef.current}
-            onStateChange={setActivitySignals}
-          />
-        </TabsContent>
-      </Tabs>
-    </>
+          </TabsContent>
+          <TabsContent value="activity" forceMount className="sidebar-tab-panel">
+            <ActivityTab state={signalsState} onRetry={loadSignals} />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </TooltipProvider>
   );
 }

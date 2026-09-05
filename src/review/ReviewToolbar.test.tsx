@@ -191,6 +191,47 @@ describe("ReviewToolbar", () => {
     expect(await screen.findByRole("menuitem", { name: "Line numbers" })).toBeInTheDocument();
   });
 
+  it("exposes collapse-all state via aria-pressed and an accurate label/tooltip", () => {
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={0}
+        busy={false}
+        onBack={vi.fn()}
+        onQueue={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+        onCollapseAll={vi.fn()}
+        collapsedAll={false}
+      />,
+    );
+
+    const collapseButton = screen.getByRole("button", { name: "Collapse all files" });
+    expect(collapseButton).toHaveAttribute("aria-pressed", "false");
+
+    cleanup();
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={0}
+        busy={false}
+        onBack={vi.fn()}
+        onQueue={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+        onCollapseAll={vi.fn()}
+        collapsedAll={true}
+      />,
+    );
+
+    const expandButton = screen.getByRole("button", { name: "Expand all files" });
+    expect(expandButton).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("keeps split, unified, collapse, and display disabled while busy even when callbacks are supplied", () => {
     render(
       <ReviewToolbar

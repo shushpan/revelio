@@ -71,6 +71,10 @@ export function TreeTab({ files, selectedPath, onSelectPath, active }: TreeTabPr
     if (selectedPath === null || selectedPath === lastReportedRef.current) return;
     lastReportedRef.current = selectedPath;
     model.getItem(selectedPath)?.select();
+    // Documented API (model.scrollToPath, no `focus` option): brings an off-screen
+    // active row into view without stealing keyboard focus from wherever the user
+    // is currently interacting (fix round item 1).
+    model.scrollToPath(selectedPath);
   }, [selectedPath, model]);
 
   // @pierre/trees@1.0.0-beta.6 has no documented resize/refresh/remeasure API

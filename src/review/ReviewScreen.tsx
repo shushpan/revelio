@@ -286,6 +286,7 @@ export function ReviewScreen({
           writeStoredDiffLayout("unified");
         }}
         onCollapseAll={() => setCollapsedAll((value) => !value)}
+        collapsedAll={collapsedAll}
         displayOptions={displayOptions}
       />
       <div className="review-body">

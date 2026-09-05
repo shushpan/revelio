@@ -1,13 +1,5 @@
-import { Effect } from "effect";
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
-import { pullRequestKey } from "../../inbox/InboxScreen";
-import type {
-  CodeReviewProvider,
-  PullRequestSummary,
-  ReviewSignal,
-  ReviewSignalKind,
-} from "../../providers/contracts";
+import type { ReviewSignal, ReviewSignalKind } from "../../providers/contracts";
 import { Button } from "../../ui/Button";
 
 export type ActivityStatus = "loading" | "loaded" | "error";
@@ -19,14 +11,10 @@ export interface ActivityState {
 }
 
 export interface ActivityTabProps {
-  readonly provider: CodeReviewProvider;
-  readonly pullRequest: PullRequestSummary;
-  /** Whether the Activity tab is the currently visible sidebar tab. */
-  readonly active: boolean;
-  /** Owned by ReviewScreen; persists for the lifetime of the open review. */
-  readonly cache: Map<string, ActivityState>;
-  /** Notifies the owner (e.g. Sidebar) after the cache entry changes. */
-  readonly onStateChange?: (state: ActivityState) => void;
+  /** Owned by Sidebar and shared with DescriptionTab (fix round item 3): whichever
+   * tab activates first starts the one request this open review makes. */
+  readonly state: ActivityState | undefined;
+  readonly onRetry: () => void;
 }
 
 const activityLabel: Record<ReviewSignalKind, string> = {
@@ -47,44 +35,7 @@ const formatTime = (value: string): string => {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
 };
 
-export function ActivityTab({
-  provider,
-  pullRequest,
-  active,
-  cache,
-  onStateChange,
-}: ActivityTabProps): JSX.Element {
-  const key = pullRequestKey(pullRequest);
-  const [state, setState] = useState<ActivityState | undefined>(() => cache.get(key));
-
-  const load = (): void => {
-    setState({ status: "loading" });
-    void Effect.runPromise(provider.getReviewSignals(pullRequest.ref))
-      .then((signals) => {
-        const next: ActivityState = { status: "loaded", signals };
-        cache.set(key, next);
-        setState(next);
-        onStateChange?.(next);
-      })
-      .catch(() => {
-        const next: ActivityState = { status: "error", error: "Unable to load review activity." };
-        cache.set(key, next);
-        setState(next);
-        onStateChange?.(next);
-      });
-  };
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-runs only on tab (re)activation or PR change, not on every cache/load identity change (§11.3).
-  useEffect(() => {
-    if (!active) return;
-    const cached = cache.get(key);
-    if (cached) {
-      setState(cached);
-      return;
-    }
-    load();
-  }, [active, key]);
-
+export function ActivityTab({ state, onRetry }: ActivityTabProps): JSX.Element {
   if (state === undefined || state.status === "loading") {
     return (
       <section className="activity-tab" aria-label="Activity">
@@ -101,7 +52,7 @@ export function ActivityTab({
         <p className="activity-status" role="alert">
           {state.error}
         </p>
-        <Button variant="secondary" onClick={load}>
+        <Button variant="secondary" onClick={onRetry}>
           Retry
         </Button>
       </section>
