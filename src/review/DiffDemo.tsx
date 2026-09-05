@@ -10,5 +10,7 @@ export function DiffDemo({
   readonly large?: boolean;
   readonly themeType: "light" | "dark";
 }): JSX.Element {
-  return <DiffReview patch={large ? largePatch : smallPatch} themeType={themeType} />;
+  return (
+    <DiffReview patch={large ? largePatch : smallPatch} themeType={themeType} layout="unified" />
+  );
 }

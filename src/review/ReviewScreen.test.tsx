@@ -7,15 +7,49 @@ import { ReviewScreen } from "./ReviewScreen";
 vi.mock("./DiffReview", () => ({
   DiffReview: ({
     onInlineComment,
+    onActivePathChange,
+    activePath,
+    layout,
+    collapsedAll,
   }: {
     onInlineComment?: (intent: { path: string; line: number; side: "additions" }) => void;
+    onActivePathChange?: (path: string) => void;
+    activePath?: string | null;
+    layout?: string;
+    collapsedAll?: boolean;
   }) => (
-    <button
-      type="button"
-      onClick={() => onInlineComment?.({ path: "src/a.ts", line: 3, side: "additions" })}
+    <div
+      data-testid="diff-review-mock"
+      data-active-path={activePath ?? ""}
+      data-layout={layout}
+      data-collapsed-all={collapsedAll}
     >
-      Choose inline line
-    </button>
+      <button
+        type="button"
+        onClick={() => onInlineComment?.({ path: "src/a.ts", line: 3, side: "additions" })}
+      >
+        Choose inline line
+      </button>
+      <button type="button" onClick={() => onActivePathChange?.("src/diff-origin.ts")}>
+        Simulate diff-originated selection
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("./sidebar/Sidebar", () => ({
+  Sidebar: ({
+    selectedPath,
+    onSelectPath,
+  }: {
+    selectedPath: string | null;
+    onSelectPath: (path: string) => void;
+  }) => (
+    <div data-testid="sidebar-mock" data-selected-path={selectedPath ?? ""}>
+      <button type="button" onClick={() => onSelectPath("src/tree-origin.ts")}>
+        Select tree file
+      </button>
+    </div>
   ),
 }));
 
@@ -379,5 +413,102 @@ describe("ReviewScreen", () => {
     );
     expect(screen.getByText("Commenting on src/a.ts:3")).toBeInTheDocument();
     expect(saveCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("wires a tree-originated selection into the diff canvas and a diff-originated selection into the tree, without looping", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Select tree file" }));
+    expect(screen.getByTestId("diff-review-mock")).toHaveAttribute(
+      "data-active-path",
+      "src/tree-origin.ts",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Simulate diff-originated selection" }));
+    expect(screen.getByTestId("sidebar-mock")).toHaveAttribute(
+      "data-selected-path",
+      "src/diff-origin.ts",
+    );
+    expect(screen.getByTestId("diff-review-mock")).toHaveAttribute(
+      "data-active-path",
+      "src/diff-origin.ts",
+    );
+  });
+
+  it("defaults the diff layout from the desktop breakpoint and lets the toolbar toggle it", async () => {
+    const matchMedia = vi.fn().mockReturnValue({ matches: true } as MediaQueryList);
+    vi.stubGlobal("matchMedia", matchMedia);
+    const setItem = vi.fn();
+    const localStorageMock = {
+      clear: vi.fn(),
+      getItem: vi.fn(() => null),
+      key: vi.fn(() => null),
+      length: 0,
+      removeItem: vi.fn(),
+      setItem,
+    } as unknown as Storage;
+    vi.stubGlobal("localStorage", localStorageMock);
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("diff-review-mock")).toHaveAttribute("data-layout", "split"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Unified view" }));
+
+    expect(screen.getByTestId("diff-review-mock")).toHaveAttribute("data-layout", "unified");
+    expect(setItem).toHaveBeenCalledWith("revelio.review.diffLayout", "unified");
+    vi.unstubAllGlobals();
+  });
+
+  it("toggles collapse-all for every file from the toolbar", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("diff-review-mock")).toHaveAttribute("data-collapsed-all", "false"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse all files" }));
+
+    expect(screen.getByTestId("diff-review-mock")).toHaveAttribute("data-collapsed-all", "true");
   });
 });

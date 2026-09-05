@@ -9,20 +9,47 @@ import type {
   InlineCommentAnchor,
   PullRequestSummary,
 } from "../providers/contracts";
+import { DropdownMenuItem } from "../ui/DropdownMenu";
 import type { ThemeChoice } from "../ui/ThemeControl";
 import { shouldUseDiffsWorkerPool } from "../workers/diffs-worker-gate";
-import { DiffReview } from "./DiffReview";
-import { FileTree } from "./FileTree";
-import { Overview } from "./Overview";
+import { type DiffIndicatorsOption, type DiffLayout, DiffReview } from "./DiffReview";
 import type { PreparedPatchFile } from "./patch";
 import { QueueDrawer } from "./QueueDrawer";
 import { ReviewToolbar } from "./ReviewToolbar";
+import { Sidebar } from "./sidebar/Sidebar";
 import {
   FinishReviewError,
   type FinishReviewOutcome,
   type FinishReviewReceipt,
   finishReview,
 } from "./finish-review";
+
+const diffLayoutStorageKey = "revelio.review.diffLayout";
+
+function readStoredDiffLayout(): DiffLayout | null {
+  try {
+    const value = window.localStorage.getItem(diffLayoutStorageKey);
+    return value === "split" || value === "unified" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredDiffLayout(value: DiffLayout): void {
+  try {
+    window.localStorage.setItem(diffLayoutStorageKey, value);
+  } catch {
+    // Best effort: the layout choice simply resets to the breakpoint default next time.
+  }
+}
+
+function defaultDiffLayout(): DiffLayout {
+  try {
+    return window.matchMedia("(min-width: 768px)").matches ? "split" : "unified";
+  } catch {
+    return "unified";
+  }
+}
 
 export interface ReviewScreenProps {
   readonly provider: CodeReviewProvider;
@@ -37,8 +64,6 @@ export interface ReviewScreenProps {
   /** Resolves only after the generated checkpoint is durable. */
   readonly saveCheckpoint: (checkpoint: Checkpoint) => Promise<void>;
 }
-
-type Tab = "changes" | "overview";
 
 interface FinishAttempt {
   readonly pullRequestKey: string;
@@ -64,13 +89,19 @@ export function ReviewScreen({
   const [inlineIntent, setInlineIntent] = useState<InlineCommentAnchor | null>(null);
   const [action, setAction] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("changes");
   const [files, setFiles] = useState<ReadonlyArray<PreparedPatchFile>>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
   const [workerPoolEnabled, setWorkerPoolEnabled] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishAttempt, setFinishAttempt] = useState<FinishAttempt | undefined>();
+  const [layout, setLayout] = useState<DiffLayout>(
+    () => readStoredDiffLayout() ?? defaultDiffLayout(),
+  );
+  const [collapsedAll, setCollapsedAll] = useState(false);
+  const [lineNumbers, setLineNumbers] = useState(true);
+  const [wrapLines, setWrapLines] = useState(false);
+  const [diffIndicators, setDiffIndicators] = useState<DiffIndicatorsOption>("classic");
   const currentPullRequestKey = pullRequestKey(pullRequest);
   const isActionInFlight = action !== null;
 
@@ -78,7 +109,6 @@ export function ReviewScreen({
     let active = true;
     setPatch(null);
     setLoadingError(null);
-    setTab("changes");
     setFiles([]);
     setSelectedPath(null);
     setQueueOpen(false);
@@ -206,6 +236,35 @@ export function ReviewScreen({
     (candidate) => pullRequestKey(candidate) === pullRequestKey(pullRequest),
   );
 
+  const displayOptions = (
+    <>
+      <DropdownMenuItem
+        onSelect={(event) => {
+          event.preventDefault();
+          setLineNumbers((value) => !value);
+        }}
+      >
+        {lineNumbers ? "✓ Line numbers" : "Line numbers"}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onSelect={(event) => {
+          event.preventDefault();
+          setWrapLines((value) => !value);
+        }}
+      >
+        {wrapLines ? "✓ Wrap long lines" : "Wrap long lines"}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onSelect={(event) => {
+          event.preventDefault();
+          setDiffIndicators((value) => (value === "classic" ? "none" : "classic"));
+        }}
+      >
+        {diffIndicators === "classic" ? "✓ Diff indicators" : "Diff indicators"}
+      </DropdownMenuItem>
+    </>
+  );
+
   return (
     <main className="review-page">
       <ReviewToolbar
@@ -218,6 +277,16 @@ export function ReviewScreen({
         theme={theme}
         resolvedTheme={themeType}
         onThemeChange={onThemeChange}
+        onSplitView={() => {
+          setLayout("split");
+          writeStoredDiffLayout("split");
+        }}
+        onUnifiedView={() => {
+          setLayout("unified");
+          writeStoredDiffLayout("unified");
+        }}
+        onCollapseAll={() => setCollapsedAll((value) => !value)}
+        displayOptions={displayOptions}
       />
       <div className="review-body">
         {finishOpen ? (
@@ -257,80 +326,61 @@ export function ReviewScreen({
             {notice}
           </p>
         ) : null}
-        <div className="review-tabs" role="tablist">
-          <button
-            type="button"
-            className={tab === "changes" ? "review-tab review-tab-active" : "review-tab"}
-            aria-selected={tab === "changes"}
-            role="tab"
-            onClick={() => setTab("changes")}
+        <section className="review-comment-box" aria-label="Review comment">
+          {inlineIntent ? (
+            <p className="inline-comment-context">
+              Commenting on {inlineIntent.path}:{inlineIntent.line}
+            </p>
+          ) : null}
+          <textarea
+            aria-label={inlineIntent ? "Inline comment" : "General comment"}
+            placeholder={inlineIntent ? "Leave an inline comment" : "Leave a general comment"}
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            rows={2}
+          />
+          <Button
+            variant="secondary"
+            isDisabled={action !== null || comment.trim() === ""}
+            onPress={submitComment}
           >
-            Changes
-          </button>
-          <button
-            type="button"
-            className={tab === "overview" ? "review-tab review-tab-active" : "review-tab"}
-            aria-selected={tab === "overview"}
-            role="tab"
-            onClick={() => setTab("overview")}
-          >
-            Overview
-          </button>
-        </div>
-        {tab === "overview" ? (
-          <Overview provider={provider} pullRequest={pullRequest} currentUserId={currentUserId} />
+            {inlineIntent ? "Send inline comment" : "Send comment"}
+          </Button>
+        </section>
+        {patch !== null ? (
+          <div className="review-main">
+            <Sidebar
+              files={files}
+              selectedPath={selectedPath}
+              onSelectPath={setSelectedPath}
+              pullRequest={pullRequest}
+              currentUserId={currentUserId}
+              provider={provider}
+            />
+            <DiffReview
+              patch={patch}
+              themeType={themeType}
+              layout={layout}
+              collapsedAll={collapsedAll}
+              lineNumbers={lineNumbers}
+              wrapLines={wrapLines}
+              diffIndicators={diffIndicators}
+              disableWorkerPool={!workerPoolEnabled}
+              activePath={selectedPath}
+              onActivePathChange={setSelectedPath}
+              onFilesChange={setFiles}
+              onInlineComment={(intent) =>
+                setInlineIntent({
+                  ...intent,
+                  side: intent.side === "additions" ? "new" : "old",
+                })
+              }
+            />
+          </div>
         ) : (
-          <>
-            <section className="review-comment-box" aria-label="Review comment">
-              {inlineIntent ? (
-                <p className="inline-comment-context">
-                  Commenting on {inlineIntent.path}:{inlineIntent.line}
-                </p>
-              ) : null}
-              <textarea
-                aria-label={inlineIntent ? "Inline comment" : "General comment"}
-                placeholder={inlineIntent ? "Leave an inline comment" : "Leave a general comment"}
-                value={comment}
-                onChange={(event) => setComment(event.target.value)}
-                rows={2}
-              />
-              <Button
-                variant="secondary"
-                isDisabled={action !== null || comment.trim() === ""}
-                onPress={submitComment}
-              >
-                {inlineIntent ? "Send inline comment" : "Send comment"}
-              </Button>
-            </section>
-            {patch !== null ? (
-              <div className="review-workspace">
-                <div className="review-filetree-column">
-                  <FileTree files={files} selected={selectedPath} onSelect={setSelectedPath} />
-                </div>
-                <div className="review-content-column">
-                  <DiffReview
-                    patch={patch}
-                    themeType={themeType}
-                    hideFileNav
-                    disableWorkerPool={!workerPoolEnabled}
-                    activePath={selectedPath}
-                    onActivePathChange={setSelectedPath}
-                    onFilesChange={setFiles}
-                    onInlineComment={(intent) =>
-                      setInlineIntent({
-                        ...intent,
-                        side: intent.side === "additions" ? "new" : "old",
-                      })
-                    }
-                  />
-                </div>
-              </div>
-            ) : (
-              <p className="review-status" role="status">
-                {loadingError ?? "Loading pull request diff…"}
-              </p>
-            )}
-          </>
+          <p className="review-status" role="status">
+            {loadingError ?? "Loading pull request diff…"}
+          </p>
         )}
       </div>
       <QueueDrawer

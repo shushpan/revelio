@@ -13,36 +13,51 @@ export interface InlineCommentIntent {
   readonly side: "additions" | "deletions";
 }
 
+export type DiffLayout = "unified" | "split";
+export type DiffIndicatorsOption = "classic" | "none";
+
 export interface DiffReviewProps {
   readonly patch: string;
   readonly themeType: "light" | "dark";
+  readonly layout: DiffLayout;
+  readonly collapsedAll?: boolean;
+  readonly lineNumbers?: boolean;
+  readonly wrapLines?: boolean;
+  readonly diffIndicators?: DiffIndicatorsOption;
   readonly onInlineComment?: (intent: InlineCommentIntent) => void;
   readonly preprocessOptions?: PreprocessPatchAsyncOptions;
   readonly activePath?: string | null;
   readonly onActivePathChange?: (path: string) => void;
   readonly onFilesChange?: (files: PreparedPatch["files"]) => void;
-  readonly hideFileNav?: boolean;
   readonly disableWorkerPool?: boolean;
 }
 
 export function DiffReview({
   patch,
   themeType,
+  layout,
+  collapsedAll = false,
+  lineNumbers = true,
+  wrapLines = false,
+  diffIndicators = "classic",
   onInlineComment,
   preprocessOptions,
   activePath: controlledActivePath,
   onActivePathChange,
   onFilesChange,
-  hideFileNav = false,
   disableWorkerPool = true,
 }: DiffReviewProps): JSX.Element {
   const [prepared, setPrepared] = useState<PreparedPatch | null>(null);
   const [internalActivePath, setInternalActivePath] = useState<string | null>(null);
-  const [layout, setLayout] = useState<"unified" | "split">("unified");
   const [error, setError] = useState<string | null>(null);
   const [lastIntent, setLastIntent] = useState<InlineCommentIntent | null>(null);
   const codeViewRef = useRef<CodeViewHandle<InlineCommentIntent>>(null);
   const activePath = controlledActivePath ?? internalActivePath;
+  // Guards the tree/diff selection loop (spec §11.1, §23): a path this
+  // component itself reported via onActivePathChange must not, once echoed
+  // back in as `activePath`, cause a redundant scrollTo — only a path change
+  // that originated elsewhere (e.g. a Tree row click) should scroll.
+  const lastReportedPathRef = useRef<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,7 +70,10 @@ export function DiffReview({
         setPrepared(nextPrepared);
         const firstPath = nextPrepared.files[0]?.path ?? null;
         setInternalActivePath(firstPath);
-        if (firstPath) onActivePathChange?.(firstPath);
+        if (firstPath) {
+          lastReportedPathRef.current = firstPath;
+          onActivePathChange?.(firstPath);
+        }
         onFilesChange?.(nextPrepared.files);
       })
       .catch((nextError: unknown) => {
@@ -67,6 +85,7 @@ export function DiffReview({
 
   useEffect(() => {
     if (!prepared || controlledActivePath == null) return;
+    if (controlledActivePath === lastReportedPathRef.current) return;
     const file = prepared.files.find((candidate) => candidate.path === controlledActivePath);
     if (!file) return;
     codeViewRef.current?.scrollTo({
@@ -83,6 +102,7 @@ export function DiffReview({
       id: file.id,
       type: "diff",
       fileDiff: file.fileDiff,
+      collapsed: collapsedAll,
       annotations:
         file.firstChangedLine !== undefined && file.firstChangedSide !== undefined
           ? [
@@ -98,7 +118,7 @@ export function DiffReview({
             ]
           : undefined,
     }));
-  }, [prepared]);
+  }, [prepared, collapsedAll]);
 
   const activeFile = prepared?.files.find((file) => file.path === activePath) ?? prepared?.files[0];
   const inlineComment =
@@ -110,64 +130,10 @@ export function DiffReview({
         }
       : null;
 
-  const navigateToFile = (file: PreparedPatch["files"][number]): void => {
-    setInternalActivePath(file.path);
-    onActivePathChange?.(file.path);
-    codeViewRef.current?.scrollTo({
-      type: "item",
-      id: file.id,
-      align: "start",
-      behavior: "instant",
-    });
-  };
-
   return (
-    <section className="review-card" aria-labelledby="changes-title">
-      <div className="review-header">
-        <div>
-          <p className="eyebrow">Diff-first review</p>
-          <h2 id="changes-title">Changes</h2>
-        </div>
-        <div className="layout-toggle">
-          <Button
-            aria-pressed={layout === "unified"}
-            className="layout-button"
-            variant={layout === "unified" ? "primary" : "secondary"}
-            onPress={() => setLayout("unified")}
-          >
-            Unified
-          </Button>
-          <Button
-            aria-pressed={layout === "split"}
-            className="layout-button"
-            variant={layout === "split" ? "primary" : "secondary"}
-            onPress={() => setLayout("split")}
-          >
-            Split
-          </Button>
-        </div>
-      </div>
+    <div className="diff-canvas">
       {prepared ? (
         <>
-          <div className="review-summary" role="status">
-            {prepared.metadata.fileCount} files · {prepared.metadata.additions} additions ·{" "}
-            {prepared.metadata.deletions} deletions
-          </div>
-          {hideFileNav ? null : (
-            <nav className="review-file-nav" aria-label="Changed files">
-              {prepared.files.map((file) => (
-                <Button
-                  key={file.id}
-                  className="file-nav-button"
-                  aria-current={file.path === activeFile?.path ? "page" : undefined}
-                  variant="secondary"
-                  onPress={() => navigateToFile(file)}
-                >
-                  {file.path}
-                </Button>
-              ))}
-            </nav>
-          )}
           {inlineComment ? (
             <Button
               variant="secondary"
@@ -194,7 +160,10 @@ export function DiffReview({
                 diffStyle: layout,
                 themeType,
                 lineDiffType: "none",
-                layout: { paddingTop: 0, paddingBottom: 0, gap: 12 },
+                layout: { paddingTop: 0, paddingBottom: 0, gap: 1 },
+                disableLineNumbers: !lineNumbers,
+                overflow: wrapLines ? "wrap" : "scroll",
+                diffIndicators,
               }}
             />
           </div>
@@ -204,6 +173,6 @@ export function DiffReview({
           {error ?? "Preparing review patch…"}
         </p>
       )}
-    </section>
+    </div>
   );
 }

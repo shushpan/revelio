@@ -231,7 +231,7 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await expect(page.getByText("acme/tools")).toBeVisible();
 
   await page.getByRole("button", { name: /acme\/review/ }).click();
-  await expect(page.getByRole("heading", { name: "Changes" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Tree" })).toBeVisible();
   await expect(page.locator(".diff-view")).toContainText("export const reviewed = true;");
 
   await page.getByRole("textbox", { name: "General comment" }).fill("Looks good");
@@ -284,6 +284,11 @@ test("Review is a full-viewport workspace with a 49px toolbar and no global mast
       .evaluate((element) => element.getBoundingClientRect());
     expect(rootRect.width).toBe(viewport.width);
     expect(rootRect.height).toBe(viewport.height);
+
+    const sidebarWidth = await page
+      .locator(".sidebar")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(Math.abs(sidebarWidth - 320)).toBeLessThanOrEqual(1);
   }
 });
 
@@ -396,6 +401,92 @@ test("Finish Review persists the review checkpoint before advancing the captured
   await page.getByRole("button", { name: "Back to inbox" }).click();
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(page.getByRole("button", { name: /Fresh review arrives/ })).toBeVisible();
+});
+
+test("selecting a Tree row scrolls the diff, and the Tree survives two Tree ↔ Description cycles", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
+  await expect(page.getByText("src/check.ts", { exact: true })).toBeVisible();
+  await page.getByText("src/check.ts", { exact: true }).click();
+  await expect(page.locator(".diff-view")).toContainText("export const reviewed = true;");
+
+  for (let cycle = 0; cycle < 2; cycle += 1) {
+    await page.getByRole("tab", { name: "Description" }).click();
+    await expect(page.getByRole("tab", { name: "Description", selected: true })).toBeVisible();
+    await page.getByRole("tab", { name: "Tree" }).click();
+    await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
+    await expect(page.getByText("src/check.ts", { exact: true })).toBeVisible();
+  }
+});
+
+test("narrow viewports open the sidebar as a bottom sheet and default the diff to unified", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  await expect(page.getByRole("button", { name: "Finish Review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Split view" })).toBeVisible();
+
+  await expect(page.getByRole("button", { name: "Open sidebar" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Tree" })).not.toBeVisible();
+  await page.getByRole("button", { name: "Open sidebar" }).click();
+  await expect(page.getByRole("tab", { name: "Tree" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tab", { name: "Tree" })).not.toBeVisible();
+});
+
+test("a manual split/unified override persists across a tab switch within the same review", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  await page.getByRole("button", { name: "Unified view" }).click();
+  await page.getByRole("tab", { name: "Description" }).click();
+  await page.getByRole("tab", { name: "Tree" }).click();
+
+  const storedLayout = await page.evaluate(() =>
+    window.localStorage.getItem("revelio.review.diffLayout"),
+  );
+  expect(storedLayout).toBe("unified");
 });
 
 test("shows a successful row while another selected repository is still loading", async ({
