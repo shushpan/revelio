@@ -795,13 +795,15 @@ export function App(): JSX.Element {
 
   return (
     <>
-      <header className="app-shell app-header">
-        <div>
-          <p className="eyebrow">Personal review workspace</p>
-          <h1>Revelio</h1>
-        </div>
-        <ThemeControl theme={selectedTheme} resolvedTheme={diffTheme} onThemeChange={setTheme} />
-      </header>
+      {appState.screen !== "review" ? (
+        <header className="app-shell app-header">
+          <div>
+            <p className="eyebrow">Personal review workspace</p>
+            <h1>Revelio</h1>
+          </div>
+          <ThemeControl theme={selectedTheme} resolvedTheme={diffTheme} onThemeChange={setTheme} />
+        </header>
+      ) : null}
       {appState.screen === "restoring" ? (
         <p className="app-shell inbox-copy" role="status">
           Restoring Revelio…
@@ -895,6 +897,8 @@ export function App(): JSX.Element {
             provider={appState.provider}
             pullRequest={appState.pullRequest}
             themeType={diffTheme}
+            theme={selectedTheme}
+            onThemeChange={setTheme}
             currentUserId={appState.user.id}
             queue={appState.queue}
             onBack={() =>

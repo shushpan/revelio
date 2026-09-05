@@ -72,6 +72,8 @@ describe("ReviewScreen", () => {
         })}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[first, pullRequest, last]}
         onBack={vi.fn()}
@@ -99,6 +101,8 @@ describe("ReviewScreen", () => {
         provider={reviewProvider}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest, nextPullRequest]}
         onBack={vi.fn()}
@@ -116,6 +120,8 @@ describe("ReviewScreen", () => {
         provider={reviewProvider}
         pullRequest={nextPullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest, nextPullRequest]}
         onBack={vi.fn()}
@@ -142,6 +148,8 @@ describe("ReviewScreen", () => {
         })}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest]}
         onBack={vi.fn()}
@@ -173,6 +181,8 @@ describe("ReviewScreen", () => {
         })}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest, nextPullRequest]}
         onBack={vi.fn()}
@@ -210,6 +220,8 @@ describe("ReviewScreen", () => {
         })}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest, nextPullRequest]}
         onBack={onBack}
@@ -225,11 +237,11 @@ describe("ReviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
 
     await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
-    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back to inbox" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Queue (2)" })).toBeDisabled();
     expect(screen.queryByRole("dialog", { name: "Review queue" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
     fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
     expect(onBack).not.toHaveBeenCalled();
     expect(onSelectPullRequest).not.toHaveBeenCalled();
@@ -269,6 +281,8 @@ describe("ReviewScreen", () => {
         })}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest, nextPullRequest]}
         onBack={vi.fn()}
@@ -311,6 +325,8 @@ describe("ReviewScreen", () => {
         )}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest]}
         onBack={vi.fn()}
@@ -339,6 +355,8 @@ describe("ReviewScreen", () => {
         provider={provider(() => Effect.succeed(undefined))}
         pullRequest={pullRequest}
         themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
         currentUserId="reviewer"
         queue={[pullRequest]}
         onBack={vi.fn()}

@@ -9,12 +9,14 @@ import type {
   InlineCommentAnchor,
   PullRequestSummary,
 } from "../providers/contracts";
+import type { ThemeChoice } from "../ui/ThemeControl";
 import { shouldUseDiffsWorkerPool } from "../workers/diffs-worker-gate";
 import { DiffReview } from "./DiffReview";
 import { FileTree } from "./FileTree";
 import { Overview } from "./Overview";
 import type { PreparedPatchFile } from "./patch";
 import { QueueDrawer } from "./QueueDrawer";
+import { ReviewToolbar } from "./ReviewToolbar";
 import {
   FinishReviewError,
   type FinishReviewOutcome,
@@ -26,6 +28,8 @@ export interface ReviewScreenProps {
   readonly provider: CodeReviewProvider;
   readonly pullRequest: PullRequestSummary;
   readonly themeType: "light" | "dark";
+  readonly theme: ThemeChoice;
+  readonly onThemeChange: (theme: ThemeChoice) => void;
   readonly currentUserId: string;
   readonly queue: ReadonlyArray<PullRequestSummary>;
   readonly onBack: () => void;
@@ -46,6 +50,8 @@ export function ReviewScreen({
   provider,
   pullRequest,
   themeType,
+  theme,
+  onThemeChange,
   currentUserId,
   queue,
   onBack,
@@ -202,144 +208,131 @@ export function ReviewScreen({
 
   return (
     <main className="review-page">
-      <header className="review-toolbar">
-        <Button variant="secondary" isDisabled={isActionInFlight} onPress={onBack}>
-          Back
-        </Button>
-        <div className="review-title">
-          <span className="inbox-repository">
-            {pullRequest.ref.repository.workspace}/{pullRequest.ref.repository.slug}
-          </span>
-          <h2>{pullRequest.title}</h2>
-          <span className="inbox-branches">
-            {pullRequest.sourceBranch} → {pullRequest.targetBranch}
-          </span>
-        </div>
-        <div className="review-actions">
-          <Button
-            variant="secondary"
-            isDisabled={isActionInFlight}
-            onPress={() => setQueueOpen(true)}
-          >
-            Queue ({queue.length})
-          </Button>
-          <Button
-            variant="primary"
-            isDisabled={action !== null}
-            onPress={() => setFinishOpen(true)}
-          >
-            Finish Review
-          </Button>
-        </div>
-      </header>
-      {finishOpen ? (
-        <section className="review-finish" role="dialog" aria-label="Finish Review">
-          <p>Choose how to finish this review.</p>
-          {provider.capabilities.canWriteReviews ? (
-            <>
-              <Button
-                variant="secondary"
-                isDisabled={action !== null}
-                onPress={() => finish("approved")}
-              >
-                Approve
-              </Button>
-              <Button
-                variant="secondary"
-                isDisabled={action !== null}
-                onPress={() => finish("changes_requested")}
-              >
-                Request changes
-              </Button>
-            </>
-          ) : (
-            <p>Remote review decisions are unavailable for this connection.</p>
-          )}
-          <Button variant="primary" isDisabled={action !== null} onPress={() => finish("reviewed")}>
-            Reviewed
-          </Button>
-        </section>
-      ) : null}
-      {notice ? (
-        <p className="review-notice" role="status">
-          {notice}
-        </p>
-      ) : null}
-      <div className="review-tabs" role="tablist">
-        <button
-          type="button"
-          className={tab === "changes" ? "review-tab review-tab-active" : "review-tab"}
-          aria-selected={tab === "changes"}
-          role="tab"
-          onClick={() => setTab("changes")}
-        >
-          Changes
-        </button>
-        <button
-          type="button"
-          className={tab === "overview" ? "review-tab review-tab-active" : "review-tab"}
-          aria-selected={tab === "overview"}
-          role="tab"
-          onClick={() => setTab("overview")}
-        >
-          Overview
-        </button>
-      </div>
-      {tab === "overview" ? (
-        <Overview provider={provider} pullRequest={pullRequest} currentUserId={currentUserId} />
-      ) : (
-        <>
-          <section className="review-comment-box" aria-label="Review comment">
-            {inlineIntent ? (
-              <p className="inline-comment-context">
-                Commenting on {inlineIntent.path}:{inlineIntent.line}
-              </p>
-            ) : null}
-            <textarea
-              aria-label={inlineIntent ? "Inline comment" : "General comment"}
-              placeholder={inlineIntent ? "Leave an inline comment" : "Leave a general comment"}
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              rows={2}
-            />
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        queueCount={queue.length}
+        busy={isActionInFlight}
+        onBack={onBack}
+        onQueue={() => setQueueOpen(true)}
+        onFinish={() => setFinishOpen(true)}
+        theme={theme}
+        resolvedTheme={themeType}
+        onThemeChange={onThemeChange}
+      />
+      <div className="review-body">
+        {finishOpen ? (
+          <section className="review-finish" role="dialog" aria-label="Finish Review">
+            <p>Choose how to finish this review.</p>
+            {provider.capabilities.canWriteReviews ? (
+              <>
+                <Button
+                  variant="secondary"
+                  isDisabled={action !== null}
+                  onPress={() => finish("approved")}
+                >
+                  Approve
+                </Button>
+                <Button
+                  variant="secondary"
+                  isDisabled={action !== null}
+                  onPress={() => finish("changes_requested")}
+                >
+                  Request changes
+                </Button>
+              </>
+            ) : (
+              <p>Remote review decisions are unavailable for this connection.</p>
+            )}
             <Button
-              variant="secondary"
-              isDisabled={action !== null || comment.trim() === ""}
-              onPress={submitComment}
+              variant="primary"
+              isDisabled={action !== null}
+              onPress={() => finish("reviewed")}
             >
-              {inlineIntent ? "Send inline comment" : "Send comment"}
+              Reviewed
             </Button>
           </section>
-          {patch !== null ? (
-            <div className="review-workspace">
-              <div className="review-filetree-column">
-                <FileTree files={files} selected={selectedPath} onSelect={setSelectedPath} />
+        ) : null}
+        {notice ? (
+          <p className="review-notice" role="status">
+            {notice}
+          </p>
+        ) : null}
+        <div className="review-tabs" role="tablist">
+          <button
+            type="button"
+            className={tab === "changes" ? "review-tab review-tab-active" : "review-tab"}
+            aria-selected={tab === "changes"}
+            role="tab"
+            onClick={() => setTab("changes")}
+          >
+            Changes
+          </button>
+          <button
+            type="button"
+            className={tab === "overview" ? "review-tab review-tab-active" : "review-tab"}
+            aria-selected={tab === "overview"}
+            role="tab"
+            onClick={() => setTab("overview")}
+          >
+            Overview
+          </button>
+        </div>
+        {tab === "overview" ? (
+          <Overview provider={provider} pullRequest={pullRequest} currentUserId={currentUserId} />
+        ) : (
+          <>
+            <section className="review-comment-box" aria-label="Review comment">
+              {inlineIntent ? (
+                <p className="inline-comment-context">
+                  Commenting on {inlineIntent.path}:{inlineIntent.line}
+                </p>
+              ) : null}
+              <textarea
+                aria-label={inlineIntent ? "Inline comment" : "General comment"}
+                placeholder={inlineIntent ? "Leave an inline comment" : "Leave a general comment"}
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                rows={2}
+              />
+              <Button
+                variant="secondary"
+                isDisabled={action !== null || comment.trim() === ""}
+                onPress={submitComment}
+              >
+                {inlineIntent ? "Send inline comment" : "Send comment"}
+              </Button>
+            </section>
+            {patch !== null ? (
+              <div className="review-workspace">
+                <div className="review-filetree-column">
+                  <FileTree files={files} selected={selectedPath} onSelect={setSelectedPath} />
+                </div>
+                <div className="review-content-column">
+                  <DiffReview
+                    patch={patch}
+                    themeType={themeType}
+                    hideFileNav
+                    disableWorkerPool={!workerPoolEnabled}
+                    activePath={selectedPath}
+                    onActivePathChange={setSelectedPath}
+                    onFilesChange={setFiles}
+                    onInlineComment={(intent) =>
+                      setInlineIntent({
+                        ...intent,
+                        side: intent.side === "additions" ? "new" : "old",
+                      })
+                    }
+                  />
+                </div>
               </div>
-              <div className="review-content-column">
-                <DiffReview
-                  patch={patch}
-                  themeType={themeType}
-                  hideFileNav
-                  disableWorkerPool={!workerPoolEnabled}
-                  activePath={selectedPath}
-                  onActivePathChange={setSelectedPath}
-                  onFilesChange={setFiles}
-                  onInlineComment={(intent) =>
-                    setInlineIntent({
-                      ...intent,
-                      side: intent.side === "additions" ? "new" : "old",
-                    })
-                  }
-                />
-              </div>
-            </div>
-          ) : (
-            <p className="review-status" role="status">
-              {loadingError ?? "Loading pull request diff…"}
-            </p>
-          )}
-        </>
-      )}
+            ) : (
+              <p className="review-status" role="status">
+                {loadingError ?? "Loading pull request diff…"}
+              </p>
+            )}
+          </>
+        )}
+      </div>
       <QueueDrawer
         queue={queue}
         currentIndex={queueIndex}

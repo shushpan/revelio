@@ -645,6 +645,39 @@ describe("Revelio shell", () => {
     expect(await screen.findByRole("button", { name: "Queue (1)" })).toBeInTheDocument();
   });
 
+  it("hides the global masthead only while reviewing, showing the compact toolbar instead", async () => {
+    const requestedPullRequest = {
+      ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
+      title: "Improve caching",
+      description: "",
+      state: "OPEN" as const,
+      updatedAt: "2026-08-29T10:00:00Z",
+      sourceBranch: "feature/cache",
+      targetBranch: "main",
+      sourceCommit: "cache-head",
+      author: { id: "author", displayName: "Author" },
+      reviewerIds: ["reviewer"],
+    };
+    render(<App />);
+    await connectWith(
+      buildProvider({ listOpenPullRequests: () => Effect.succeed([requestedPullRequest]) }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+
+    expect(screen.getByRole("heading", { name: "Revelio" })).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByText("Improve caching"));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Revelio" })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("banner", { name: /revelio/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to inbox" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Queue \(/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Finish Review" })).toBeVisible();
+  });
+
   it("resumes from the trusted browser vault on reload before the seven-day expiry", async () => {
     activeProvider = buildProvider();
     activeVault = buildVault();

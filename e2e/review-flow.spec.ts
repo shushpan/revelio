@@ -249,6 +249,44 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await expect(page.locator("body")).not.toContainText(credentials.token);
 });
 
+test("Review is a full-viewport workspace with a 49px toolbar and no global masthead", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+  await expect(page.getByRole("button", { name: "Finish Review" })).toBeVisible();
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator("header.app-header")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Revelio" })).toHaveCount(0);
+
+    const toolbarRect = await page
+      .locator("main.review-page > header")
+      .evaluate((element) => element.getBoundingClientRect());
+    expect(toolbarRect.height).toBe(49);
+
+    const rootRect = await page
+      .locator("main.review-page")
+      .evaluate((element) => element.getBoundingClientRect());
+    expect(rootRect.width).toBe(viewport.width);
+    expect(rootRect.height).toBe(viewport.height);
+  }
+});
+
 test("Finish Review persists the review checkpoint before advancing the captured queue", async ({
   page,
 }) => {
@@ -304,7 +342,7 @@ test("Finish Review persists the review checkpoint before advancing the captured
       ],
     });
 
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back to inbox" }).click();
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(page.getByRole("button", { name: /Fresh review arrives/ })).toBeVisible();
 });
