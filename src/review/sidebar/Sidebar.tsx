@@ -73,6 +73,32 @@ const ActivityGlyph = (): JSX.Element => (
   </TabGlyph>
 );
 
+// A plain ARIA/CSS tooltip span, not the shared Radix `Tooltip` primitive:
+// `Tooltip.Trigger asChild`'s clone writes its own open/closed `data-state`
+// onto the cloned node, overwriting `Tabs.Trigger`'s active/inactive
+// `data-state` that the CSS active-tab indicator and this file's own
+// focus-management code both depend on (verified by rendering the DOM —
+// see task-3-report.md). `aria-hidden` keeps this span's text out of the
+// trigger's accessible name (name-from-content respects aria-hidden);
+// `aria-describedby` on the trigger still exposes it as the accessible
+// description regardless of that hidden state — the same technique the
+// WAI-ARIA tooltip pattern uses. Visibility is real CSS `:hover`/
+// `:focus-visible` (see `.sidebar-tab-tooltip` in styles.css) — hover and
+// keyboard focus, not a touch-only affordance, and no new dependency.
+function TabTooltip({
+  id,
+  children,
+}: {
+  readonly id: string;
+  readonly children: ReactNode;
+}): JSX.Element {
+  return (
+    <span role="tooltip" id={id} aria-hidden="true" className="sidebar-tab-tooltip">
+      {children}
+    </span>
+  );
+}
+
 function SidebarTriggerIcon(): JSX.Element {
   return (
     <svg
@@ -261,33 +287,35 @@ export function Sidebar({
           aria-modal={sheetOpen ? true : undefined}
           tabIndex={sheetOpen ? -1 : undefined}
         >
-          {/* Fix round item 4: a plain native `title`, not the shared Radix Tooltip
-              wrapper, because Tooltip.Trigger's `asChild` clone writes its own
-              `data-state` (open/closed) onto the cloned node, overriding — not
-              composing with — Tabs.Trigger's own `data-state` (active/inactive)
-              that the CSS active-tab indicator and this focus-management code
-              both depend on (verified: rendered DOM showed `data-state="closed"`
-              on the Tree trigger, permanently masking which tab is active). */}
           <TabsList aria-label="Sidebar sections">
-            <TabsTrigger value="tree" className="sidebar-tab-trigger" title="Browse changed files">
+            <TabsTrigger
+              value="tree"
+              className="sidebar-tab-trigger"
+              aria-describedby="sidebar-tab-tooltip-tree"
+            >
               <TreeGlyph />
               <span>Tree</span>
+              <TabTooltip id="sidebar-tab-tooltip-tree">Browse changed files</TabTooltip>
             </TabsTrigger>
             <TabsTrigger
               value="description"
               className="sidebar-tab-trigger"
-              title="Pull request description and reviewers"
+              aria-describedby="sidebar-tab-tooltip-description"
             >
               <DescriptionGlyph />
               <span>Description</span>
+              <TabTooltip id="sidebar-tab-tooltip-description">
+                Pull request description and reviewers
+              </TabTooltip>
             </TabsTrigger>
             <TabsTrigger
               value="activity"
               className="sidebar-tab-trigger"
-              title="Review activity timeline"
+              aria-describedby="sidebar-tab-tooltip-activity"
             >
               <ActivityGlyph />
               <span>Activity</span>
+              <TabTooltip id="sidebar-tab-tooltip-activity">Review activity timeline</TabTooltip>
             </TabsTrigger>
           </TabsList>
           <TabsContent value="tree" forceMount className="sidebar-tab-panel">

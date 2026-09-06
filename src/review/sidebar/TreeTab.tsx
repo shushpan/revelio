@@ -70,6 +70,15 @@ export function TreeTab({ files, selectedPath, onSelectPath, active }: TreeTabPr
   useEffect(() => {
     if (selectedPath === null || selectedPath === lastReportedRef.current) return;
     lastReportedRef.current = selectedPath;
+    // `FileTree` (the type useFileTree returns) has no exclusive "select only
+    // this path" method — only per-item additive select()/deselect() and
+    // getSelectedPaths(). Without explicitly deselecting whatever was
+    // selected before, a later diff-driven path change left the previous
+    // file's row selected too (verified in a real browser: scrolling into a
+    // later file highlighted both rows at once).
+    for (const path of model.getSelectedPaths()) {
+      if (path !== selectedPath) model.getItem(path)?.deselect();
+    }
     model.getItem(selectedPath)?.select();
     // Documented API (model.scrollToPath, no `focus` option): brings an off-screen
     // active row into view without stealing keyboard focus from wherever the user

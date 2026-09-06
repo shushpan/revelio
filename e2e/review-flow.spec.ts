@@ -40,11 +40,37 @@ const reviewPatch = [
   "",
 ].join("\n");
 
+// The diff-to-tree sync (DiffReview's handleScroll) marks a file "active" once
+// its own top has scrolled above the viewport — so the *second* file, not the
+// first, must be tall enough to make its top reachable within the scrollable
+// range (maxScrollTop = totalHeight - viewportHeight). A short first file lets
+// scrolling reach that point quickly; a short second file never would.
+const FIRST_FILE_LINES = 20;
+const SECOND_FILE_LINES = 250;
+const scrollTargetPatch = [
+  "diff --git a/src/check.ts b/src/check.ts",
+  "index 7c1d2e1..beef123 100644",
+  "--- a/src/check.ts",
+  "+++ b/src/check.ts",
+  `@@ -1,${FIRST_FILE_LINES} +1,${FIRST_FILE_LINES + 1} @@`,
+  ...Array.from({ length: FIRST_FILE_LINES }, (_, index) => ` const line${index} = ${index};`),
+  "+export const reviewed = true;",
+  "diff --git a/src/other.ts b/src/other.ts",
+  "index aaa1111..bbb2222 100644",
+  "--- a/src/other.ts",
+  "+++ b/src/other.ts",
+  `@@ -1,${SECOND_FILE_LINES} +1,${SECOND_FILE_LINES + 1} @@`,
+  ...Array.from({ length: SECOND_FILE_LINES }, (_, index) => ` const other${index} = ${index};`),
+  "+export const otherReviewed = true;",
+  "",
+].join("\n");
+
 type ToolRepositoryResponse = "success" | "failure" | "deferred";
 
 interface FixtureOptions {
   readonly tools?: ToolRepositoryResponse;
   readonly toolsRequestedByCurrentUser?: boolean;
+  readonly reviewDiff?: string;
 }
 
 interface FixtureController {
@@ -82,7 +108,11 @@ const readStoredCheckpoints = async (page: Page): Promise<unknown> =>
 
 const installBitbucketFixtures = async (
   page: Page,
-  { tools = "success", toolsRequestedByCurrentUser = false }: FixtureOptions = {},
+  {
+    tools = "success",
+    toolsRequestedByCurrentUser = false,
+    reviewDiff = reviewPatch,
+  }: FixtureOptions = {},
 ): Promise<FixtureController> => {
   const observed: string[] = [];
   let freshReviewArrivedDuringFinishRefresh = false;
@@ -195,10 +225,11 @@ const installBitbucketFixtures = async (
       await route.fulfill({ json: { values: [] } });
       return;
     }
-    if (
-      path === "/2.0/repositories/acme/review/pullrequests/7/diff" ||
-      path === "/2.0/repositories/acme/tools/pullrequests/8/diff"
-    ) {
+    if (path === "/2.0/repositories/acme/review/pullrequests/7/diff") {
+      await route.fulfill({ body: reviewDiff, contentType: "text/plain" });
+      return;
+    }
+    if (path === "/2.0/repositories/acme/tools/pullrequests/8/diff") {
       await route.fulfill({ body: reviewPatch, contentType: "text/plain" });
       return;
     }
@@ -432,6 +463,52 @@ test("selecting a Tree row scrolls the diff, and the Tree survives two Tree ↔ 
     await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
     await expect(page.getByText("src/check.ts", { exact: true })).toBeVisible();
   }
+});
+
+test("scrolling the real diff viewport to a later file updates the real tree row's selection", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page, { reviewDiff: scrollTargetPatch });
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
+  await expect(page.locator(".diff-view")).toContainText("export const reviewed = true;");
+
+  // Real `@pierre/trees` DOM attributes (verified against the installed
+  // package's own rowAttributes.ts, not guessed): treeitem rows expose their
+  // path via `data-item-path` and their selection via `aria-selected`.
+  const firstRow = page.locator('[role="treeitem"][data-item-path="src/check.ts"]');
+  const secondRow = page.locator('[role="treeitem"][data-item-path="src/other.ts"]');
+  await expect(firstRow).toHaveAttribute("aria-selected", "true");
+  await expect(secondRow).toHaveAttribute("aria-selected", "false");
+
+  // Real mouse-wheel scrolling of the actual `@pierre/diffs` viewport — no
+  // test-only production control. The first file's ~250 context lines put
+  // `src/other.ts` well below the fold, so repeated real scrolling is
+  // required to bring it into view.
+  await page.locator(".diff-view").hover();
+  await expect
+    .poll(
+      async () => {
+        await page.mouse.wheel(0, 4000);
+        return secondRow.getAttribute("aria-selected");
+      },
+      { timeout: 20_000 },
+    )
+    .toBe("true");
+
+  await expect(firstRow).toHaveAttribute("aria-selected", "false");
 });
 
 test("narrow viewports open the sidebar as a bottom sheet and default the diff to unified", async ({

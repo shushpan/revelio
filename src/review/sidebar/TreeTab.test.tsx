@@ -17,11 +17,15 @@ class FakeFileTree {
   readonly created: unknown;
   paths: string[];
   gitStatus: Record<string, string> = {};
-  selected: string | null;
+  // Mirrors the real `FileTree` render class (the type `useFileTree` actually
+  // returns): there is no exclusive "select only this path" method, only
+  // per-item additive select()/deselect() and getSelectedPaths().
+  selectedPaths = new Set<string>();
   onSelectionChange?: (paths: readonly string[]) => void;
   readonly resetCalls: FakeResetArg[] = [];
   readonly gitStatusCalls: FakeGitStatusPatch[] = [];
   readonly selectCalls: string[] = [];
+  readonly deselectCalls: string[] = [];
   readonly scrollToPathCalls: Array<{ readonly path: string; readonly focus?: boolean }> = [];
 
   constructor(options: {
@@ -31,7 +35,7 @@ class FakeFileTree {
     readonly onSelectionChange?: (paths: readonly string[]) => void;
   }) {
     this.paths = [...(options.preparedInput?.paths ?? [])];
-    this.selected = options.initialSelectedPaths?.[0] ?? null;
+    for (const path of options.initialSelectedPaths ?? []) this.selectedPaths.add(path);
     this.onSelectionChange = options.onSelectionChange;
     for (const entry of options.gitStatus ?? []) this.gitStatus[entry.path] = entry.status;
     this.created = options;
@@ -48,12 +52,20 @@ class FakeFileTree {
     for (const path of patch.remove ?? []) delete this.gitStatus[path];
   }
 
-  getItem(path: string): { select: () => void } | null {
+  getSelectedPaths(): readonly string[] {
+    return [...this.selectedPaths];
+  }
+
+  getItem(path: string): { select: () => void; deselect: () => void } | null {
     if (!this.paths.includes(path)) return null;
     return {
       select: () => {
-        this.selected = path;
+        this.selectedPaths.add(path);
         this.selectCalls.push(path);
+      },
+      deselect: () => {
+        this.selectedPaths.delete(path);
+        this.deselectCalls.push(path);
       },
     };
   }
@@ -63,7 +75,7 @@ class FakeFileTree {
   }
 
   simulateUserSelect(path: string): void {
-    this.selected = path;
+    this.selectedPaths = new Set([path]);
     this.onSelectionChange?.([path]);
   }
 }
@@ -131,7 +143,7 @@ describe("TreeTab", () => {
     });
   });
 
-  it("selects the controlled path in the model without re-reporting it back", () => {
+  it("exclusively selects the controlled path in the model without re-reporting it back", () => {
     const onSelectPath = vi.fn();
     const { rerender } = render(
       <TreeTab files={files} selectedPath={null} onSelectPath={onSelectPath} active={false} />,
@@ -147,7 +159,41 @@ describe("TreeTab", () => {
     );
 
     expect(lastModel().selectCalls).toEqual(["src/b/three.ts"]);
+    expect(lastModel().deselectCalls).toEqual([]);
     expect(onSelectPath).not.toHaveBeenCalled();
+  });
+
+  it("deselects the previously controlled path so the selection replaces rather than accumulates", () => {
+    // The real `FileTree` render class has no exclusive "select only this
+    // path" method — an item's own `.select()` is additive. Without an
+    // explicit deselect of whatever was selected before, a later
+    // diff-driven path change left both the old and new active file
+    // highlighted at once (verified in a real browser).
+    const onSelectPath = vi.fn();
+    const { rerender } = render(
+      <TreeTab files={files} selectedPath={null} onSelectPath={onSelectPath} active={false} />,
+    );
+
+    rerender(
+      <TreeTab
+        files={files}
+        selectedPath="src/a/one.ts"
+        onSelectPath={onSelectPath}
+        active={false}
+      />,
+    );
+    rerender(
+      <TreeTab
+        files={files}
+        selectedPath="src/b/three.ts"
+        onSelectPath={onSelectPath}
+        active={false}
+      />,
+    );
+
+    expect(lastModel().selectCalls).toEqual(["src/a/one.ts", "src/b/three.ts"]);
+    expect(lastModel().deselectCalls).toEqual(["src/a/one.ts"]);
+    expect(lastModel().getSelectedPaths()).toEqual(["src/b/three.ts"]);
   });
 
   it("scrolls an off-screen externally selected path into view without stealing focus", () => {

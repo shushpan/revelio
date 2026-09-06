@@ -368,9 +368,36 @@ h2 {
   border-bottom: 1px solid var(--border);
 }
 .sidebar-tab-trigger {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+.sidebar-tab-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  z-index: 10;
+  margin-top: var(--space-1);
+  padding: 0.2rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: var(--fg);
+  color: var(--bg);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 0.1s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-tab-tooltip {
+    transition: none;
+  }
+}
+.sidebar-tab-trigger:hover .sidebar-tab-tooltip,
+.sidebar-tab-trigger:focus-visible .sidebar-tab-tooltip {
+  opacity: 1;
 }
 .sidebar-tab-panel {
   min-height: 0;
@@ -502,7 +529,20 @@ h2 {
   min-height: 0;
   overflow: hidden;
 }
-.diff-view,
+/* `.diff-view` must itself be a flex container (not just a flex *item*) for
+   `flex: 1` on its child (CodeView's own root) to take effect — otherwise the
+   child's height is auto/content-sized, never overflows, and the *outer*
+   `.diff-view` box becomes the one the browser actually scrolls. CodeView
+   attaches its real scroll listener (and therefore its `onScroll` callback)
+   to its own root, not to this wrapper, so that root — not this element —
+   must be the element with a bounded height and a working scrollbar. */
+.diff-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
 .diff-view > div {
   flex: 1;
   min-height: 0;

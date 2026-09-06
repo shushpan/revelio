@@ -208,7 +208,7 @@ describe("Sidebar", () => {
     expect(document.querySelectorAll('[role="tablist"]')).toHaveLength(1);
   });
 
-  it("gives each sidebar tab trigger an icon, an accessible name, and a distinct tooltip", () => {
+  it("gives each sidebar tab trigger an icon, an accessible name, and a real tooltip association", () => {
     render(
       <Sidebar
         files={[]}
@@ -226,12 +226,50 @@ describe("Sidebar", () => {
       ["Activity", "Review activity timeline"],
     ];
 
-    for (const [name, tooltip] of cases) {
+    for (const [name, tooltipText] of cases) {
       const trigger = screen.getByRole("tab", { name });
       expect(trigger.querySelector("svg")).toBeInTheDocument();
-      expect(tooltip).not.toBe(name);
-      expect(trigger).toHaveAttribute("title", tooltip);
+      expect(tooltipText).not.toBe(name);
+      // Accessible name stays exactly the visible label — the tooltip text
+      // must not leak into it (would happen if the tooltip span weren't
+      // aria-hidden, since accname includes visible descendant text).
+      expect(trigger).not.toHaveAttribute("title");
+
+      const describedBy = trigger.getAttribute("aria-describedby");
+      expect(describedBy).not.toBeNull();
+      // biome-ignore lint/style/noNonNullAssertion: asserted above
+      const tooltip = document.getElementById(describedBy!);
+      expect(tooltip).toHaveAttribute("role", "tooltip");
+      expect(tooltip).toHaveAttribute("aria-hidden", "true");
+      expect(tooltip).toHaveTextContent(tooltipText);
+      // Structural hook for real CSS hover/focus-visible display: the
+      // tooltip lives inside the trigger it describes, and the trigger
+      // carries the class those CSS rules key off — a nested interactive
+      // element would break tab semantics, so this must stay a plain span.
+      expect(trigger).toContainElement(tooltip);
+      expect(tooltip?.tagName).toBe("SPAN");
+      expect(trigger).toHaveClass("sidebar-tab-trigger");
+      expect(tooltip).toHaveClass("sidebar-tab-tooltip");
     }
+
+    // The tooltip wiring must not steal Radix's own active/inactive
+    // data-state — the exact collision the previous `title`-based
+    // workaround was introduced to avoid.
+    expect(screen.getByRole("tab", { name: "Tree" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Description" })).toHaveAttribute(
+      "data-state",
+      "inactive",
+    );
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Description" }), { button: 0 });
+    expect(screen.getByRole("tab", { name: "Description" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    expect(screen.getByRole("tab", { name: "Tree" })).toHaveAttribute("data-state", "inactive");
+    expect(
+      screen.getByRole("tab", { name: "Description" }).getAttribute("aria-describedby"),
+    ).not.toBeNull();
   });
 
   it("loads review signals once when Description opens first, and Activity reuses the result", async () => {
