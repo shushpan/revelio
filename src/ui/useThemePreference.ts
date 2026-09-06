@@ -11,12 +11,21 @@ export interface ThemePreference {
 }
 
 const readStoredTheme = (): ThemeChoice => {
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  return stored === "light" || stored === "dark" ? stored : "system";
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    return stored === "light" || stored === "dark" ? stored : "system";
+  } catch {
+    return "system";
+  }
 };
 
-const readSystemPreference = (): "light" | "dark" =>
-  window.matchMedia(PREFERS_DARK_MEDIA).matches ? "dark" : "light";
+const readSystemPreference = (): "light" | "dark" => {
+  try {
+    return window.matchMedia(PREFERS_DARK_MEDIA).matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+};
 
 export function useThemePreference(): ThemePreference {
   const [theme, setThemeState] = useState<ThemeChoice>(readStoredTheme);
@@ -24,12 +33,27 @@ export function useThemePreference(): ThemePreference {
   const appliedRef = useRef<"light" | "dark" | null>(null);
 
   useEffect(() => {
-    const media = window.matchMedia(PREFERS_DARK_MEDIA);
+    let media: MediaQueryList;
+    try {
+      media = window.matchMedia(PREFERS_DARK_MEDIA);
+    } catch {
+      return;
+    }
     const listener = (event: { matches: boolean }): void => {
       setSystemTheme(event.matches ? "dark" : "light");
     };
-    media.addEventListener("change", listener);
-    return () => media.removeEventListener("change", listener);
+    try {
+      media.addEventListener("change", listener);
+    } catch {
+      // Best effort: live OS-preference changes simply won't be tracked.
+    }
+    return () => {
+      try {
+        media.removeEventListener("change", listener);
+      } catch {
+        // Best effort.
+      }
+    };
   }, []);
 
   const resolvedTheme: "light" | "dark" = theme === "system" ? systemTheme : theme;
@@ -43,7 +67,11 @@ export function useThemePreference(): ThemePreference {
   }, [resolvedTheme]);
 
   const setTheme = useCallback((next: ThemeChoice) => {
-    window.localStorage.setItem(STORAGE_KEY, next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // Best effort: the choice still drives this session even if it cannot persist.
+    }
     setThemeState(next);
   }, []);
 

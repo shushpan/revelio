@@ -128,4 +128,115 @@ describe("useThemePreference", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     expect(document.documentElement.classList.contains("light")).toBe(true);
   });
+
+  it("preserves unrelated root classes when applying the resolved theme", () => {
+    document.documentElement.classList.add("unrelated-class");
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    expect(document.documentElement.classList.contains("unrelated-class")).toBe(true);
+  });
+
+  describe("when browser storage/media APIs throw", () => {
+    it("falls back to system when localStorage.getItem throws during initial render", () => {
+      vi.stubGlobal("localStorage", {
+        ...makeLocalStorage(),
+        getItem: () => {
+          throw new Error("getItem failed");
+        },
+      });
+      render(<Harness />);
+      expect(screen.getByTestId("state")).toHaveTextContent("system:light");
+      expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    });
+
+    it("keeps the in-memory theme and DOM update when localStorage.setItem throws", () => {
+      vi.stubGlobal("localStorage", {
+        ...makeLocalStorage(),
+        setItem: () => {
+          throw new Error("setItem failed");
+        },
+      });
+      render(<Harness />);
+      fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+      expect(screen.getByTestId("state")).toHaveTextContent("dark:dark");
+      expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+      expect(document.documentElement.classList.contains("dark")).toBe(true);
+    });
+
+    it("falls back to light when matchMedia throws during initial resolution", () => {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => {
+          throw new Error("matchMedia failed");
+        }),
+      );
+      render(<Harness />);
+      expect(screen.getByTestId("state")).toHaveTextContent("system:light");
+      expect(document.documentElement).toHaveAttribute("data-theme", "light");
+    });
+
+    it("remains usable when matchMedia throws only during the effect's subscription attempt", () => {
+      let calls = 0;
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => {
+          calls += 1;
+          if (calls === 1) return media.mediaQueryList;
+          throw new Error("matchMedia failed on subscription");
+        }),
+      );
+      render(<Harness />);
+      expect(screen.getByTestId("state")).toHaveTextContent("system:light");
+      fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+      expect(screen.getByTestId("state")).toHaveTextContent("dark:dark");
+      fireEvent.click(screen.getByRole("button", { name: "System" }));
+      expect(screen.getByTestId("state")).toHaveTextContent("system:light");
+    });
+
+    it("does not leak a listener when addEventListener throws after partially registering it", () => {
+      const listeners = new Set<(event: { matches: boolean }) => void>();
+      const mediaQueryList = {
+        matches: false,
+        addEventListener: vi.fn(
+          (_type: string, listener: (event: { matches: boolean }) => void) => {
+            listeners.add(listener);
+            throw new Error("addEventListener failed");
+          },
+        ),
+        removeEventListener: vi.fn(
+          (_type: string, listener: (event: { matches: boolean }) => void) => {
+            listeners.delete(listener);
+          },
+        ),
+      } as unknown as MediaQueryList;
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => mediaQueryList),
+      );
+
+      const { unmount } = render(<Harness />);
+      expect(listeners.size).toBe(1);
+
+      unmount();
+      expect(mediaQueryList.removeEventListener).toHaveBeenCalled();
+      expect(listeners.size).toBe(0);
+    });
+
+    it("does not crash when removeEventListener throws during cleanup", () => {
+      const mediaQueryList = {
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(() => {
+          throw new Error("removeEventListener failed");
+        }),
+      } as unknown as MediaQueryList;
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn(() => mediaQueryList),
+      );
+
+      const { unmount } = render(<Harness />);
+      expect(() => unmount()).not.toThrow();
+    });
+  });
 });
