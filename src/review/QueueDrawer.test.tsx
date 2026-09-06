@@ -111,4 +111,43 @@ describe("QueueDrawer", () => {
     expect(screen.getByRole("button", { name: /First PR/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Close review queue" })).toBeDisabled();
   });
+
+  it("calls onClose when a pointer interaction lands outside the panel", async () => {
+    const onClose = vi.fn();
+    render(
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    // Radix defers outside-pointer dismissal to the subsequent click on the same
+    // target, and only starts listening after its own mount-effect timer fires.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body, { button: 0 });
+    fireEvent.click(document.body);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not close via onOpenChange, Escape, or an outside pointer interaction while busy", async () => {
+    const onClose = vi.fn();
+    render(
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        busy={true}
+        onSelect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body, { button: 0 });
+    fireEvent.click(document.body);
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Review queue" })).toBeInTheDocument();
+  });
 });

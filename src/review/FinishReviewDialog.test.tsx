@@ -13,6 +13,7 @@ function baseProps() {
     comment: "",
     onCommentChange: vi.fn(),
     inlineIntent: null,
+    onSwitchToGeneral: vi.fn(),
     onAddDraft: vi.fn(),
     onSendDraftNow: vi.fn(),
     onFinish: vi.fn(),
@@ -126,14 +127,41 @@ describe("FinishReviewDialog", () => {
     expect(screen.getByRole("button", { name: "Add inline comment" })).toBeEnabled();
   });
 
-  it("disables decision, draft, and cancel actions while busy", () => {
+  it("offers an explicit control back to General comment only in inline mode", () => {
+    const { rerender } = render(<FinishReviewDialog {...baseProps()} />);
+    expect(
+      screen.queryByRole("button", { name: "Switch to general comment" }),
+    ).not.toBeInTheDocument();
+
+    const onSwitchToGeneral = vi.fn();
+    rerender(
+      <FinishReviewDialog
+        {...baseProps()}
+        inlineIntent={{ path: "src/a.ts", line: 3, side: "new" }}
+        onSwitchToGeneral={onSwitchToGeneral}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Switch to general comment" }));
+    expect(onSwitchToGeneral).toHaveBeenCalled();
+  });
+
+  it("disables decision, draft, cancel, and switch-to-general actions while busy", () => {
     const drafts: PendingReviewComment[] = [{ id: "1", text: "General note" }];
-    render(<FinishReviewDialog {...baseProps()} busy={true} drafts={drafts} comment="x" />);
+    render(
+      <FinishReviewDialog
+        {...baseProps()}
+        busy={true}
+        drafts={drafts}
+        comment="x"
+        inlineIntent={{ path: "src/a.ts", line: 3, side: "new" }}
+      />,
+    );
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Request changes" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reviewed" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send now" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add comment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add inline comment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Switch to general comment" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
   });
 
@@ -168,12 +196,27 @@ describe("FinishReviewDialog", () => {
     expect(onFinish).not.toHaveBeenCalled();
   });
 
-  it("does not close on Escape or outside pointer down while busy", () => {
+  it("closes on a genuine outside pointer interaction when not busy", async () => {
+    const onClose = vi.fn();
+    render(<FinishReviewDialog {...baseProps()} onClose={onClose} />);
+    // Radix defers outside-pointer dismissal to the subsequent click on the same
+    // target, and only starts listening after its own mount-effect timer fires.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body, { button: 0 });
+    fireEvent.click(document.body);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("does not close on Escape or an outside pointer interaction while busy", async () => {
     const onClose = vi.fn();
     render(<FinishReviewDialog {...baseProps()} onClose={onClose} busy={true} />);
     const dialog = screen.getByRole("dialog", { name: "Finish Review" });
     fireEvent.keyDown(dialog, { key: "Escape" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body, { button: 0 });
+    fireEvent.click(document.body);
     expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Finish Review" })).toBeInTheDocument();
   });
 
   it("traps focus so Tab cycles within the dialog", async () => {

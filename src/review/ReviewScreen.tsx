@@ -163,10 +163,12 @@ export function ReviewScreen({
     setQueueOpen(false);
     setAction("Finish Review");
     setNotice(null);
-    const previousReceipt =
-      finishAttempt?.pullRequestKey === currentPullRequestKey && finishAttempt.outcome === outcome
-        ? finishAttempt.receipt
-        : undefined;
+    const previousReceipt: FinishReviewReceipt | undefined =
+      finishAttempt?.pullRequestKey !== currentPullRequestKey
+        ? undefined
+        : finishAttempt.outcome === outcome
+          ? finishAttempt.receipt
+          : { sentCommentIds: finishAttempt.receipt.sentCommentIds, decisionApplied: false };
     void finishReview(
       {
         pullRequestKey: currentPullRequestKey,
@@ -221,6 +223,16 @@ export function ReviewScreen({
           setNotice("Finish Review could not be completed. Try again.");
         }
       });
+  };
+
+  const isSameAnchor = (a: InlineCommentAnchor | null, b: InlineCommentAnchor | null): boolean => {
+    if (a === null || b === null) return a === b;
+    return a.path === b.path && a.line === b.line && a.side === b.side;
+  };
+
+  const setComposerContext = (nextIntent: InlineCommentAnchor | null): void => {
+    if (!isSameAnchor(inlineIntent, nextIntent)) setComment("");
+    setInlineIntent(nextIntent);
   };
 
   const addDraft = (): void => {
@@ -337,7 +349,7 @@ export function ReviewScreen({
               onActivePathChange={setSelectedPath}
               onFilesChange={setFiles}
               onInlineComment={(intent) => {
-                setInlineIntent({
+                setComposerContext({
                   ...intent,
                   side: intent.side === "additions" ? "new" : "old",
                 });
@@ -360,6 +372,7 @@ export function ReviewScreen({
         comment={comment}
         onCommentChange={setComment}
         inlineIntent={inlineIntent}
+        onSwitchToGeneral={() => setComposerContext(null)}
         onAddDraft={addDraft}
         onSendDraftNow={sendDraftNow}
         onFinish={finish}

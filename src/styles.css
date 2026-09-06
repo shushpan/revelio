@@ -305,6 +305,12 @@ h2 {
   flex-shrink: 0;
   padding-inline: 0.75rem;
 }
+.finish-review-composer-context {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
 .inline-comment-context {
   margin: 0;
   font-size: 0.8rem;

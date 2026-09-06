@@ -30,6 +30,12 @@ vi.mock("./DiffReview", () => ({
       >
         Choose inline line
       </button>
+      <button
+        type="button"
+        onClick={() => onInlineComment?.({ path: "src/b.ts", line: 9, side: "additions" })}
+      >
+        Choose another inline line
+      </button>
       <button type="button" onClick={() => onActivePathChange?.("src/diff-origin.ts")}>
         Simulate diff-originated selection
       </button>
@@ -202,6 +208,152 @@ describe("ReviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
 
     await waitFor(() => expect(requestChanges).toHaveBeenCalledTimes(1));
+  });
+
+  it("carries sent comment ids across an outcome change after a decision failure, without resending comments", async () => {
+    const addGeneralComment = vi.fn(() => Effect.succeed(undefined));
+    const approvePullRequest = vi.fn(() =>
+      Effect.fail({
+        _tag: "Forbidden" as const,
+        message: "Provider denied the requested permission" as const,
+        operation: "approve",
+        status: 403 as const,
+      }),
+    );
+    const saveCheckpoint = vi.fn(() => Promise.resolve());
+    render(
+      <ReviewScreen
+        provider={provider(addGeneralComment, {
+          approvePullRequest,
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.change(screen.getByRole("textbox", { name: "General comment" }), {
+      target: { value: "Bundled comment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(addGeneralComment).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("decision could not be sent"),
+    );
+
+    // The dialog stays open after a stage failure; retry with a different outcome.
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
+    expect(addGeneralComment).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries sent comment ids and re-applies a changed decision after a checkpoint failure, without resending comments", async () => {
+    const addGeneralComment = vi.fn(() => Effect.succeed(undefined));
+    const approvePullRequest = vi.fn(() => Effect.succeed(undefined));
+    const requestChanges = vi.fn(() => Effect.succeed(undefined));
+    let checkpointShouldFail = true;
+    const saveCheckpoint = vi.fn(() => {
+      if (checkpointShouldFail) {
+        checkpointShouldFail = false;
+        return Promise.reject(new Error("storage failed"));
+      }
+      return Promise.resolve();
+    });
+    render(
+      <ReviewScreen
+        provider={provider(addGeneralComment, {
+          approvePullRequest,
+          requestChanges,
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.change(screen.getByRole("textbox", { name: "General comment" }), {
+      target: { value: "Bundled comment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(addGeneralComment).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Request changes" }));
+
+    await waitFor(() => expect(requestChanges).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledTimes(2));
+    expect(addGeneralComment).toHaveBeenCalledTimes(1);
+    expect(approvePullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries only the checkpoint on a same-outcome retry, without resending comments or re-applying the decision", async () => {
+    const addGeneralComment = vi.fn(() => Effect.succeed(undefined));
+    const approvePullRequest = vi.fn(() => Effect.succeed(undefined));
+    let checkpointShouldFail = true;
+    const saveCheckpoint = vi.fn(() => {
+      if (checkpointShouldFail) {
+        checkpointShouldFail = false;
+        return Promise.reject(new Error("storage failed"));
+      }
+      return Promise.resolve();
+    });
+    render(
+      <ReviewScreen
+        provider={provider(addGeneralComment, {
+          approvePullRequest,
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.change(screen.getByRole("textbox", { name: "General comment" }), {
+      target: { value: "Bundled comment" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(approvePullRequest).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(addGeneralComment).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledTimes(2));
+    expect(addGeneralComment).toHaveBeenCalledTimes(1);
+    expect(approvePullRequest).toHaveBeenCalledTimes(1);
   });
 
   it("persists a reviewed checkpoint before advancing to the next captured queue item", async () => {
@@ -546,6 +698,149 @@ describe("ReviewScreen", () => {
     clickFinish();
     expect(screen.getByText("No pending comments.")).toBeInTheDocument();
     expect(screen.queryByText("Stale draft")).not.toBeInTheDocument();
+  });
+
+  it("clears general composer text when switching to an inline anchor", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.change(screen.getByRole("textbox", { name: "General comment" }), {
+      target: { value: "Stale general text" },
+    });
+    // The dialog is already open (modally hiding the background), so the diff's
+    // inline-comment trigger must be queried with `hidden: true`.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose inline line", hidden: true }),
+    );
+
+    expect(screen.getByRole("textbox", { name: "Inline comment" })).toHaveValue("");
+    expect(screen.queryByText("Stale general text")).not.toBeInTheDocument();
+  });
+
+  it("clears inline composer text when switching to a different inline anchor, even across a Cancel close", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Choose inline line" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Inline comment" }), {
+      target: { value: "Anchor A text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Finish Review" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose another inline line" }));
+    expect(screen.getByText("Commenting on src/b.ts:9")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Inline comment" })).toHaveValue("");
+    expect(screen.queryByText("Anchor A text")).not.toBeInTheDocument();
+  });
+
+  it("clears inline composer text via the explicit Switch to general comment control", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Choose inline line" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Inline comment" }), {
+      target: { value: "Inline draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Switch to general comment" }));
+
+    expect(screen.getByRole("textbox", { name: "General comment" })).toHaveValue("");
+    expect(screen.queryByText("Commenting on src/a.ts:3")).not.toBeInTheDocument();
+    expect(screen.queryByText("Inline draft")).not.toBeInTheDocument();
+  });
+
+  it("preserves unfinished inline text when reopening on the exact same anchor after Cancel", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Choose inline line" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Inline comment" }), {
+      target: { value: "Keep me" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose inline line" }));
+    expect(screen.getByRole("textbox", { name: "Inline comment" })).toHaveValue("Keep me");
+  });
+
+  it("leaves already-added pending drafts untouched when the composer context changes", async () => {
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        queue={[pullRequest]}
+        onBack={vi.fn()}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.change(screen.getByRole("textbox", { name: "General comment" }), {
+      target: { value: "Kept draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
+    expect(screen.getByText("Kept draft")).toBeInTheDocument();
+
+    // The dialog is already open (modally hiding the background), so the diff's
+    // inline-comment trigger must be queried with `hidden: true`.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Choose inline line", hidden: true }),
+    );
+    expect(screen.getByText("Kept draft")).toBeInTheDocument();
   });
 
   it("Cancel and Escape close the Finish Review dialog without submitting", async () => {

@@ -13,6 +13,7 @@ export interface FinishReviewDialogProps {
   readonly comment: string;
   readonly onCommentChange: (value: string) => void;
   readonly inlineIntent: InlineCommentAnchor | null;
+  readonly onSwitchToGeneral: () => void;
   readonly onAddDraft: () => void;
   readonly onSendDraftNow: (draft: PendingReviewComment) => void;
   readonly onFinish: (outcome: FinishReviewOutcome) => void;
@@ -28,6 +29,7 @@ export function FinishReviewDialog({
   comment,
   onCommentChange,
   inlineIntent,
+  onSwitchToGeneral,
   onAddDraft,
   onSendDraftNow,
   onFinish,
@@ -79,9 +81,20 @@ export function FinishReviewDialog({
           ) : null}
           <section aria-label="Compose comment" className="finish-review-composer">
             {inlineIntent ? (
-              <p className="inline-comment-context">
-                Commenting on {inlineIntent.path}:{inlineIntent.line}
-              </p>
+              <div className="finish-review-composer-context">
+                <p className="inline-comment-context">
+                  Commenting on {inlineIntent.path}:{inlineIntent.line}
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={onSwitchToGeneral}
+                >
+                  Switch to general comment
+                </Button>
+              </div>
             ) : null}
             <textarea
               aria-label={inlineIntent ? "Inline comment" : "General comment"}

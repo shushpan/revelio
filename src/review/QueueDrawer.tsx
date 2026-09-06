@@ -31,7 +31,7 @@ export function QueueDrawer({
     <DialogPrimitive.Root
       open={isOpen}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next && !busy) onClose();
       }}
     >
       <DialogPrimitive.Portal>
@@ -41,6 +41,12 @@ export function QueueDrawer({
         />
         <DialogPrimitive.Content
           className="queue-drawer"
+          onEscapeKeyDown={(event) => {
+            if (busy) event.preventDefault();
+          }}
+          onPointerDownOutside={(event) => {
+            if (busy) event.preventDefault();
+          }}
           onCloseAutoFocus={(event) => {
             // See FinishReviewDialog.tsx: Radix's default restore-focus races the
             // `aria-hidden` cleanup on the background, so defer one tick.
