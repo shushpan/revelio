@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, waitFor } from "@testing-library/react";
 import type { JSX } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TreeTab } from "./TreeTab";
@@ -82,9 +82,17 @@ class FakeFileTree {
 
 const createdModels: FakeFileTree[] = [];
 let viewportMountCount = 0;
+let lastViewportStyle: Record<string, string> | undefined;
+
+vi.mock("@pierre/diffs", () => ({
+  resolveTheme: vi.fn((themeName: string) => Promise.resolve({ name: themeName })),
+}));
 
 vi.mock("@pierre/trees", () => ({
   preparePresortedFileTreeInput: (paths: readonly string[]) => ({ paths: [...paths] }),
+  themeToTreeStyles: (theme: { readonly name: string }) => ({
+    "--trees-theme-marker": theme.name,
+  }),
 }));
 
 vi.mock("@pierre/trees/react", async () => {
@@ -99,10 +107,11 @@ vi.mock("@pierre/trees/react", async () => {
       });
       return { model };
     },
-    FileTree: (): JSX.Element => {
+    FileTree: ({ style }: { readonly style?: Record<string, string> }): JSX.Element => {
       react.useEffect(() => {
         viewportMountCount += 1;
       }, []);
+      lastViewportStyle = style;
       return <div data-testid="file-tree-viewport" />;
     },
   };
@@ -125,6 +134,7 @@ describe("TreeTab", () => {
     cleanup();
     createdModels.length = 0;
     viewportMountCount = 0;
+    lastViewportStyle = undefined;
   });
 
   it("builds the tree from patch-ordered, recursive file paths", () => {
@@ -258,5 +268,35 @@ describe("TreeTab", () => {
 
     expect(createdModels).toHaveLength(1);
     expect(getAllByTestId("file-tree-viewport")).toHaveLength(1);
+  });
+
+  it("applies the resolved Pierre theme's tree styles, re-resolving when themeType changes", async () => {
+    const { rerender } = render(
+      <TreeTab
+        files={files}
+        selectedPath={null}
+        onSelectPath={vi.fn()}
+        active={false}
+        themeType="light"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(lastViewportStyle).toEqual({ "--trees-theme-marker": "pierre-light" });
+    });
+
+    rerender(
+      <TreeTab
+        files={files}
+        selectedPath={null}
+        onSelectPath={vi.fn()}
+        active={false}
+        themeType="dark"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(lastViewportStyle).toEqual({ "--trees-theme-marker": "pierre-dark" });
+    });
   });
 });

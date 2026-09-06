@@ -1,4 +1,5 @@
-import { type GitStatus, preparePresortedFileTreeInput } from "@pierre/trees";
+import { resolveTheme } from "@pierre/diffs";
+import { type GitStatus, preparePresortedFileTreeInput, themeToTreeStyles } from "@pierre/trees";
 import { FileTree, useFileTree } from "@pierre/trees/react";
 import { type JSX, useEffect, useRef, useState } from "react";
 import type { PreparedPatchFile } from "../patch";
@@ -11,6 +12,8 @@ export interface TreeTabProps {
   readonly onSelectPath: (path: string) => void;
   /** Whether the Tree tab is the currently visible sidebar tab. */
   readonly active: boolean;
+  /** Matches `DiffReview`'s `themeType`; defaults to light for callers that don't theme. */
+  readonly themeType?: "light" | "dark";
 }
 
 function toGitStatus(changeType: TreeTabFile["changeType"]): GitStatus {
@@ -33,9 +36,36 @@ function gitStatusEntries(
   return files.map((file) => ({ path: file.path, status: toGitStatus(file.changeType) }));
 }
 
-export function TreeTab({ files, selectedPath, onSelectPath, active }: TreeTabProps): JSX.Element {
+export function TreeTab({
+  files,
+  selectedPath,
+  onSelectPath,
+  active,
+  themeType = "light",
+}: TreeTabProps): JSX.Element {
   const initialPathsRef = useRef<readonly string[]>(files.map((file) => file.path));
   const lastReportedRef = useRef<string | null>(selectedPath);
+
+  // `@pierre/trees`' own default styling picks light/dark via the CSS
+  // `light-dark()` function gated on `color-scheme`, which follows the OS
+  // preference, not this app's own theme toggle (its `:host` rule sets
+  // `color-scheme: light dark`, resetting any inherited override). The
+  // documented cross-theming path is `themeToTreeStyles()` fed by the same
+  // resolved Pierre theme `@pierre/diffs`' `CodeView` already uses for
+  // `themeType`, applied as inline CSS custom properties (verified against
+  // the installed package's own style.js fallback chain and .d.ts).
+  const [treeThemeStyle, setTreeThemeStyle] = useState<Record<string, string> | undefined>(
+    undefined,
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void resolveTheme(themeType === "dark" ? "pierre-dark" : "pierre-light").then((theme) => {
+      if (!cancelled) setTreeThemeStyle(themeToTreeStyles(theme));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [themeType]);
 
   const { model } = useFileTree({
     preparedInput: preparePresortedFileTreeInput(initialPathsRef.current),
@@ -100,7 +130,7 @@ export function TreeTab({ files, selectedPath, onSelectPath, active }: TreeTabPr
 
   return (
     <div className="tree-tab">
-      <FileTree key={viewportKey} model={model} />
+      <FileTree key={viewportKey} model={model} style={treeThemeStyle} />
     </div>
   );
 }

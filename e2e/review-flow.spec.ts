@@ -361,6 +361,50 @@ test("Inbox is a full-screen workspace with a 49px toolbar and no global masthea
   }
 });
 
+test("Inbox quick-filter and action buttons stay on one row inside the 49px toolbar at desktop widths", async ({
+  page,
+}) => {
+  // `.inbox-quick-filters`/`.inbox-actions` kept `flex-wrap: wrap` at every
+  // width; with two repositories loaded, their combined button width exceeds
+  // the space `.inbox-toolbar-identity`/`.inbox-search` leave them at 1280px,
+  // so "Reviewed" and "Lock" wrapped onto their own line and bled a few
+  // pixels above/below the toolbar's fixed 49px box instead of the identity
+  // text truncating further to make room.
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+  await expect(page.getByRole("heading", { name: "Open pull requests" })).toBeVisible();
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const [requestedTop, reviewedTop, manageTop, lockTop] = await Promise.all(
+      ["Requested", "Reviewed", "Manage repositories", "Lock"].map((name) =>
+        page
+          .getByRole("button", { name, exact: true })
+          .evaluate((element) => element.getBoundingClientRect().top),
+      ),
+    );
+    expect(reviewedTop).toBeCloseTo(requestedTop, 1);
+    expect(lockTop).toBeCloseTo(manageTop, 1);
+
+    // The button's own fixed CSS height hides a wrapped label (the second
+    // line just overflows the box instead of growing it), so check the
+    // computed style that actually prevents wrapping, not the box height.
+    const manageWhiteSpace = await page
+      .getByRole("button", { name: "Manage repositories", exact: true })
+      .evaluate((element) => getComputedStyle(element).whiteSpace);
+    expect(manageWhiteSpace).toBe("nowrap");
+  }
+});
+
 test("Inbox toolbar and row text truncate instead of causing horizontal overflow at 390x844", async ({
   page,
 }) => {
@@ -653,6 +697,37 @@ test("narrow viewports open the sidebar as a bottom sheet and default the diff t
   await expect(page.getByRole("tab", { name: "Tree" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("tab", { name: "Tree" })).not.toBeVisible();
+});
+
+test("the diff canvas fills the remaining review height at narrow viewports, not just a fraction of it", async ({
+  page,
+}) => {
+  // The closed mobile sidebar sheet lives in a plain block wrapper inside
+  // `.review-main`'s single-column grid. With no explicit row track, that
+  // wrapper (despite having zero visible content) and `.diff-canvas` were
+  // each auto-sized into their own implicit grid row, splitting the
+  // available height between them instead of letting the diff fill it.
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+  await expect(page.getByRole("button", { name: "Finish Review" })).toBeVisible();
+
+  const [mainRect, canvasRect] = await Promise.all([
+    page.locator(".review-main").evaluate((element) => element.getBoundingClientRect().toJSON()),
+    page.locator(".diff-canvas").evaluate((element) => element.getBoundingClientRect().toJSON()),
+  ]);
+  expect(canvasRect.top - mainRect.top).toBeLessThanOrEqual(1);
+  expect(mainRect.bottom - canvasRect.bottom).toBeLessThanOrEqual(1);
 });
 
 test("the narrow sidebar sheet is a real dialog: focus enters it, Tab never escapes, and Escape returns focus to the trigger", async ({

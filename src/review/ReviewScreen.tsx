@@ -335,6 +335,7 @@ export function ReviewScreen({
               pullRequest={pullRequest}
               currentUserId={currentUserId}
               provider={provider}
+              themeType={themeType}
             />
             <DiffReview
               patch={patch}

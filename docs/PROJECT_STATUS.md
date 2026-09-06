@@ -1,9 +1,62 @@
 # Revelio project status
 
-**Last assessed:** 2026-09-04
-**Milestone:** Trustworthy inbox completion is complete locally and verified. The
-coordinator's local milestone commits are the remaining repository bookkeeping
-before merge to `main`; this status does not imply a push or live Bitbucket result.
+**Last assessed:** 2026-09-06
+**Milestone:** Trustworthy inbox completion and the DiffHub-inspired full UI
+migration are both complete locally and verified. The coordinator's local
+milestone commits are the remaining repository bookkeeping before merge to
+`main`; this status does not imply a push or live Bitbucket result.
+
+## DiffHub-inspired full UI migration
+
+**Status:** Implemented and verified. Tasks 1–7 of
+`docs/superpowers/plans/2026-09-04-diffhub-inspired-full-ui-migration.md`,
+commit range `95cab89..bd02eb8` (Tasks 1–6) plus the Task 7 acceptance commit
+`test: prove DiffHub-inspired UI migration` on top. See
+`docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` for the
+design and `.superpowers/sdd/2026-09-04-diffhub-inspired-full-ui-migration/task-7-report.md`
+(local, gitignored) for full acceptance evidence.
+
+- **Static audits:** zero `@heroui/(react|styles)` / Berkeley Mono / DiffHub
+  wordmark matches in `src`, `package.json`, `pnpm-lock.yaml`; every runtime
+  URL under `src` is an intentional Bitbucket API constant, fixture data, or
+  the self-hosted Geist OFL license/attribution comment. `git diff --check`
+  clean.
+- **Automated acceptance (`pnpm verify`):** format (115 files) and lint clean,
+  `tsc -b` clean, **38 unit test files / 398 tests** passing, production build
+  within budget (**initial bundle 248,759 / 350,000 bytes**; **largest lazy
+  chunk 834,025 / 850,000 bytes**, unchanged from Task 6 — HeroUI removal's
+  byte savings were already realized before Task 7), and **20/20 Playwright
+  Chromium E2E tests** passing.
+- **Manual visual/keyboard pass:** Connect, Inbox, and Review captured at
+  1280×720, 1440×900, and 390×844 in both light and dark themes (plus the
+  narrow bottom sheet, the Finish Review dialog, and a partial-repository-
+  failure state); keyboard-only traversal of all five screens confirmed a
+  visible focus indicator on every stop and correct Arrow-key cycling through
+  the Tree/Description/Activity sidebar tabs. Two real layout regressions
+  found during this pass were fixed, each behind a new failing-then-passing
+  Playwright regression test (see the Task 7 report for full RED/GREEN
+  evidence):
+  1. At narrow viewports (<768px), an empty sidebar-sheet wrapper still
+     claimed its own CSS grid row, squeezing the diff canvas to roughly 60%
+     of the available height (`src/review/sidebar/Sidebar.tsx`,
+     `src/styles.css`).
+  2. At desktop widths, the Inbox's quick-filter and action-button groups
+     wrapped onto their own second line inside the fixed 49px toolbar once a
+     second repository loaded, and the wrapped "Manage repositories" label
+     itself wrapped mid-word (`src/styles.css`, `src/ui/Button.tsx`).
+- **Known deferred issues (explicitly out of scope, unaffected by this
+  migration — tracked in `docs/UX_AUDIT.md`):**
+  1. **P0** — the trusted vault still resumes for 7 days instead of applying
+     the documented 15-minute inactivity lock (`src/vault/model.ts:3`).
+  2. **P1** — the default triage quick filters (Direct/New commits/CI failed)
+     and most of the published query qualifiers (`reviewed-by`, `team`,
+     `review`, `reason`, `ci`, `age`, `size`) remain unavailable
+     (`src/inbox/InboxScreen.tsx`, `src/inbox/query.ts`).
+  3. **P1** — the review queue panel still displays already-finished,
+     reopenable entries instead of only current/upcoming ones
+     (`src/review/QueueDrawer.tsx`).
+  4. **P2** — progressive inbox loading has no pending-repository row
+     skeletons (`src/inbox/InboxScreen.tsx`, `src/inbox/load-inbox.ts`).
 
 ## Delivery snapshot
 
@@ -35,3 +88,5 @@ before merge to `main`; this status does not imply a push or live Bitbucket resu
 - [Trustworthy inbox completion plan](superpowers/plans/2026-09-02-revelio-trustworthy-inbox-completion.md)
 - [Repository scope and vault specification](superpowers/specs/2026-09-02-repository-scope-progressive-sync-and-seven-day-vault.md)
 - [Product design](superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md)
+- [DiffHub-inspired full UI migration design](superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md)
+- [DiffHub-inspired full UI migration plan](superpowers/plans/2026-09-04-diffhub-inspired-full-ui-migration.md)

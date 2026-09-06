@@ -150,6 +150,8 @@ export interface SidebarProps {
   readonly pullRequest: PullRequestSummary;
   readonly currentUserId: string;
   readonly provider: CodeReviewProvider;
+  /** Matches `DiffReview`'s `themeType`; defaults to light for callers that don't theme. */
+  readonly themeType?: "light" | "dark";
 }
 
 type SidebarTab = "tree" | "description" | "activity";
@@ -161,6 +163,7 @@ export function Sidebar({
   pullRequest,
   currentUserId,
   provider,
+  themeType,
 }: SidebarProps): JSX.Element {
   const [tab, setTab] = useState<SidebarTab>("tree");
   // Shared per-PR lazy load (fix round item 3): Description and Activity both
@@ -267,7 +270,7 @@ export function Sidebar({
       >
         <SidebarTriggerIcon />
       </IconButton>
-      <div ref={sheetGroupRef}>
+      <div ref={sheetGroupRef} className="sidebar-sheet-group">
         {sheetOpen ? (
           <button
             type="button"
@@ -325,6 +328,7 @@ export function Sidebar({
                 selectedPath={selectedPath}
                 onSelectPath={onSelectPath}
                 active={tab === "tree"}
+                themeType={themeType}
               />
             </Suspense>
           </TabsContent>

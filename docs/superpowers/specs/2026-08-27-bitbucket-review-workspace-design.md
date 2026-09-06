@@ -1,6 +1,6 @@
 # Revelio — Product and Architecture Design
 
-**Status:** Approved architecture; 2026-08-29 product and UI constraints incorporated; awaiting checkpoint review
+**Status:** Approved architecture; 2026-08-29 product and UI constraints incorporated. The HeroUI-only clauses below (§11 final paragraph, §13.1, §16.1, §16.2's `ui/` row, §24 Phase 0.1/Phase 1 HeroUI bullets, §25 criterion 13) are **superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §4, which is implemented and verified — see that document's Status line and `docs/PROJECT_STATUS.md`. Every other clause remains governing.
 
 **Date:** 2026-08-29
 
@@ -286,6 +286,8 @@ Within a reason, oldest waits appear first.
 
 Revelio uses HeroUI's default light and dark themes without a custom product palette. Compactness comes from composition, spacing, and information hierarchy built with HeroUI primitives rather than from a separate theme or component system. The interface follows the system preference by default and allows an explicit light, dark, or system choice.
 
+> **Superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §4/§7: Inbox compactness now comes from the local Radix/CVA primitive layer and its token sheet, not HeroUI.
+
 ## 12. Search, filters, and saved rules
 
 One GitHub-like query model powers search, quick filters, priority rules, named groups, and optional completion suggestions. Initial qualifiers cover:
@@ -322,6 +324,8 @@ The review surface contains:
 4. Hidden-by-default right queue drawer.
 
 Opening an inbox entry always opens `Changes`.
+
+> **Superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §10–§11: the full-viewport grid, 49px toolbar, and `Tree`/`Description`/`Activity` sidebar tabs replace this thin-top-bar/tabs/drawer layout.
 
 ### 13.2 `@pierre/diffs`
 
@@ -425,10 +429,12 @@ At the target scale, a five-minute visible polling interval leaves room under Bi
 - Vite static production build.
 - Latest stable Effect release at implementation kickoff.
 - `@pierre/diffs/react` as the primary review renderer.
-- HeroUI v3 through `@heroui/react` and `@heroui/styles` as the only product component and theme system.
-- Tailwind CSS v4 only as HeroUI's required styling runtime and layout utility layer.
-- HeroUI's default light and dark themes; no custom palette in the initial product.
-- Native semantic HTML and narrowly scoped CSS only for layout glue or behavior for which HeroUI has no primitive.
+- ~~HeroUI v3 through `@heroui/react` and `@heroui/styles` as the only product component and theme system.~~
+- ~~Tailwind CSS v4 only as HeroUI's required styling runtime and layout utility layer.~~
+- ~~HeroUI's default light and dark themes; no custom palette in the initial product.~~
+- ~~Native semantic HTML and narrowly scoped CSS only for layout glue or behavior for which HeroUI has no primitive.~~
+
+> **Superseded** (the four struck-through bullets above) by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §6: `@heroui/react`/`@heroui/styles` are removed; Tailwind CSS v4 is now the application's own direct styling engine for a local Radix/CVA primitive layer (`src/ui/`).
 - IndexedDB through one small wrapper.
 - Web Crypto plus one bundled, reviewed Argon2id implementation.
 - Vitest for unit/module tests.
@@ -456,6 +462,8 @@ src/
     workers/            CPU-heavy request/response jobs
   ui/                   HeroUI composition and product-specific adapters
 ```
+
+> **Superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §7.1: `ui/` is now local design-system primitives (Radix behavior, CVA/clsx/tailwind-merge variants, design tokens) — no HeroUI dependency.
 
 Each module exposes one small public entry point. Code outside a module does not import that module's internal files.
 
@@ -659,14 +667,14 @@ This phase produces proven contracts and fixtures, not product UI beyond a dispo
 - Replace deprecated global discovery with `GET /2.0/user/workspaces`, followed by `GET /2.0/repositories/{workspace}` for each accessible workspace.
 - Follow opaque pagination links and preserve successful workspace results when another workspace fails.
 - Distinguish malformed requests, missing resources, revoked/deprecated endpoints, provider failures, and rate limiting without exposing credentials or response bodies.
-- Migrate the application shell and product controls to HeroUI v3 default light/dark themes.
+- ~~Migrate the application shell and product controls to HeroUI v3 default light/dark themes.~~ **Superseded** — see below.
 - Use Diffs' native `pierre-light` and `pierre-dark` themes, synchronized with the application theme.
 - Update the product README with prerequisites, Corepack/pnpm setup, installation, local use, security boundaries, features, and current limitations.
 - Verify the corrected discovery contract with deterministic tests and a disposable-token live check run only by the user in their browser.
 
 ### Phase 1 — Secure connection and trustworthy inbox
 
-- HeroUI application shell and module boundaries.
+- ~~HeroUI application shell and module boundaries.~~ **Superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §4/§20: the already-shipped HeroUI shell was migrated to the local Radix/CVA primitive layer and HeroUI was fully removed (RV-00..RV-07).
 - Credential modes and vault.
 - Repository discovery/exclusions.
 - Metadata persistence and TTL cache.
@@ -727,7 +735,7 @@ The product is ready for its first real-world trial when:
 10. Public hosting and self-hosting use the same identifiable static build.
 11. No credential or Bitbucket payload is sent to an origin other than Bitbucket.
 12. `pnpm verify` passes and provides reproducible evidence for all completed phase requirements.
-13. Product UI uses HeroUI as its sole component/theme system and Diffs uses the native Pierre light/dark themes.
+13. ~~Product UI uses HeroUI as its sole component/theme system~~ and Diffs uses the native Pierre light/dark themes. **Superseded** by `docs/superpowers/specs/2026-09-04-diffhub-inspired-full-ui-design.md` §22 acceptance criterion 1: the product UI uses the local Radix/CVA primitive layer with zero `@heroui/*` imports; the Diffs-native-theme half of this criterion is retained unchanged.
 
 ## 26. Feasibility gates and fixed fallbacks
 

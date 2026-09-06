@@ -1,6 +1,6 @@
 # Revelio — DiffHub-Inspired Full UI Migration Design
 
-**Status:** Approved for implementation planning; supersedes the HeroUI-only clauses of `docs/superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md` (see §4).
+**Status:** Implemented and verified (Tasks 1–7 of `docs/superpowers/plans/2026-09-04-diffhub-inspired-full-ui-migration.md`, commits `95cab89..bd02eb8` plus the Task 7 acceptance commit). Supersedes the HeroUI-only clauses of `docs/superpowers/specs/2026-08-27-bitbucket-review-workspace-design.md` (see §4); see `docs/PROJECT_STATUS.md` for current test/bundle evidence and `.superpowers/sdd/2026-09-04-diffhub-inspired-full-ui-migration/task-7-report.md` for full acceptance evidence.
 
 **Date:** 2026-09-04
 

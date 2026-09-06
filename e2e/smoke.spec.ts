@@ -37,9 +37,26 @@ test("renders the usable connection shell without diagnostics or overlay status 
 test("switches between dark and system themes", async ({ page }) => {
   await page.goto("/");
 
+  const bodyColors = () =>
+    page.evaluate(() => {
+      const style = window.getComputedStyle(document.body);
+      return { background: style.backgroundColor, color: style.color };
+    });
+
+  await expect(page.getByRole("heading", { name: "Connect to Bitbucket Cloud" })).toBeVisible();
+  const lightColors = await bodyColors();
+  expect(lightColors.background).toBe("rgb(250, 250, 250)");
+  expect(lightColors.color).toBe("rgb(24, 24, 27)");
+
   await page.getByRole("button", { name: "Dark" }).click();
   await expect(page.locator("html")).toHaveClass(/\bdark\b/);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  // The whole app shell, not just isolated components, must actually repaint
+  // dark: the page background and default text color must both flip so
+  // body text stays legible against dark surfaces (not near-black-on-black).
+  const darkColors = await bodyColors();
+  expect(darkColors.background).toBe("rgb(9, 9, 11)");
+  expect(darkColors.color).toBe("rgb(250, 250, 250)");
 
   await page.getByRole("button", { name: "System" }).click();
   await expect(page.getByRole("button", { name: "System" })).toHaveAttribute(
