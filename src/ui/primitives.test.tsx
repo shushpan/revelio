@@ -42,6 +42,25 @@ describe("Button", () => {
     );
     expect(screen.getByRole("link", { name: "Back" })).toBeInTheDocument();
   });
+
+  it("defaults to type=button so it can never submit a surrounding form", () => {
+    render(<Button>Lock</Button>);
+    expect(screen.getByRole("button", { name: "Lock" })).toHaveAttribute("type", "button");
+  });
+
+  it("still allows an explicit submit button", () => {
+    render(<Button type="submit">Connect</Button>);
+    expect(screen.getByRole("button", { name: "Connect" })).toHaveAttribute("type", "submit");
+  });
+
+  it("does not force a type attribute onto an asChild anchor", () => {
+    render(
+      <Button asChild variant="ghost">
+        <a href="/inbox">Back</a>
+      </Button>,
+    );
+    expect(screen.getByRole("link", { name: "Back" })).not.toHaveAttribute("type");
+  });
 });
 
 describe("IconButton", () => {

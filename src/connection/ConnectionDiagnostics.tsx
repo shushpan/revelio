@@ -1,13 +1,11 @@
-import { Badge } from "@heroui/react/badge";
-import { Button } from "@heroui/react/button";
-import { Card } from "@heroui/react/card";
-import { Input } from "@heroui/react/input";
-import { Label } from "@heroui/react/label";
-import { TextField } from "@heroui/react/textfield";
 import { Effect } from "effect";
 import { type FormEvent, type JSX, useRef, useState } from "react";
 import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 import { runBitbucketDiagnostics } from "../providers/bitbucket-cloud/diagnostics";
+import { Button } from "../ui/Button";
+import { Card } from "../ui/Card";
+import { Chip, type ChipProps } from "../ui/Chip";
+import { TextField } from "../ui/TextField";
 import {
   type DiagnosticCapability,
   type DiagnosticErrorTag,
@@ -76,52 +74,44 @@ export function ConnectionDiagnostics(): JSX.Element {
     <main className="app-shell connection-page">
       <section aria-labelledby="connection-title">
         <Card className="connection-card">
-          <Card.Header className="connection-heading">
-            <div>
-              <p className="eyebrow">Phase 0</p>
-              <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
-            </div>
-            <Card.Description className="connection-copy">
+          <div className="connection-heading">
+            <p className="eyebrow">Phase 0</p>
+            <h2 id="connection-title">Connect to Bitbucket Cloud</h2>
+            <p className="connection-copy">
               Use your Atlassian email and a Bitbucket API token to run read-only connection
               diagnostics. Nothing is uploaded to a Revelio server, and credentials are not saved in
               Phase 0.
-            </Card.Description>
-            <Button variant="secondary" onPress={lock}>
+            </p>
+            <Button variant="secondary" onClick={lock}>
               Lock
             </Button>
-          </Card.Header>
-          <Card.Content>
-            <form onSubmit={run} className="connection-form">
-              <TextField name="email" fullWidth>
-                <Label>Atlassian email</Label>
-                <Input
-                  type="email"
-                  autoComplete="off"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </TextField>
-              <TextField name="apiToken" fullWidth>
-                <Label>Bitbucket API token</Label>
-                <Input
-                  type="password"
-                  autoComplete="off"
-                  value={apiToken}
-                  onChange={(event) => setApiToken(event.target.value)}
-                />
-              </TextField>
-              <Button
-                type="submit"
-                variant="primary"
-                isDisabled={
-                  diagnostics.state === "running" || email.trim() === "" || apiToken === ""
-                }
-              >
-                {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
-              </Button>
-            </form>
-            <DiagnosticsSummary diagnostics={diagnostics} />
-          </Card.Content>
+          </div>
+          <form onSubmit={run} className="connection-form">
+            <TextField
+              label="Atlassian email"
+              name="email"
+              type="email"
+              autoComplete="off"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+            />
+            <TextField
+              label="Bitbucket API token"
+              name="apiToken"
+              type="password"
+              autoComplete="off"
+              value={apiToken}
+              onChange={(event) => setApiToken(event.target.value)}
+            />
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={diagnostics.state === "running" || email.trim() === "" || apiToken === ""}
+            >
+              {diagnostics.state === "running" ? "Running diagnostics…" : "Run diagnostics"}
+            </Button>
+          </form>
+          <DiagnosticsSummary diagnostics={diagnostics} />
         </Card>
       </section>
     </main>
@@ -156,6 +146,14 @@ const errorLabels: Record<DiagnosticErrorTag, string> = {
   Unavailable: "Unavailable",
 };
 
+const chipVariantForStatus = (
+  status: "succeeded" | "failed" | "unavailable",
+): ChipProps["variant"] => {
+  if (status === "succeeded") return "success";
+  if (status === "failed") return "danger";
+  return "neutral";
+};
+
 function DiagnosticsSummary({
   diagnostics,
 }: {
@@ -185,20 +183,10 @@ function DiagnosticsSummary({
           return (
             <li key={capability}>
               <span>{capabilityLabels[capability]}</span>
-              <Badge
-                className={`result-${result.status}`}
-                color={
-                  result.status === "succeeded"
-                    ? "success"
-                    : result.status === "failed"
-                      ? "danger"
-                      : "default"
-                }
-                variant="soft"
-              >
+              <Chip variant={chipVariantForStatus(result.status)}>
                 {result.status}
                 {result.errorTag ? ` — ${errorLabels[result.errorTag]}` : ""}
-              </Badge>
+              </Chip>
             </li>
           );
         })}

@@ -1,6 +1,6 @@
-import { Button } from "@heroui/react/button";
 import { CodeView, type CodeViewHandle, type CodeViewItem } from "@pierre/diffs/react";
 import { type JSX, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../ui/Button";
 import {
   type PreprocessPatchAsyncOptions,
   preprocessPatchAsync,
@@ -162,7 +162,7 @@ export function DiffReview({
             <Button
               variant="secondary"
               className="inline-comment-button"
-              onPress={() => {
+              onClick={() => {
                 setLastIntent(inlineComment);
                 onInlineComment?.(inlineComment);
               }}

@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "@heroui/styles";
 @import "./ui/tokens.css";
 
 :root {
@@ -52,10 +51,15 @@ h2 {
   text-transform: uppercase;
 }
 .theme-control {
+  display: flex;
   flex: 0 0 auto;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 .connection-page {
-  width: min(100% - 2rem, 36rem);
+  width: min(100% - 2rem, 30rem);
   padding-top: 2rem;
 }
 .connection-card {
@@ -81,7 +85,7 @@ h2 {
 }
 
 .vault-page {
-  width: min(100% - 2rem, 36rem);
+  width: min(100% - 2rem, 30rem);
   padding-top: 2rem;
 }
 .vault-card {
@@ -259,6 +263,7 @@ h2 {
 }
 
 .selection-page {
+  width: min(100% - 2rem, 30rem);
   padding-top: 0.75rem;
 }
 .selection-progress {

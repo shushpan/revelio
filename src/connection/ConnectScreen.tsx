@@ -1,12 +1,10 @@
-import { Button } from "@heroui/react/button";
-import { Card } from "@heroui/react/card";
-import { Input } from "@heroui/react/input";
-import { Label } from "@heroui/react/label";
-import { TextField } from "@heroui/react/textfield";
 import type { FormEvent, JSX } from "react";
 import { useRef, useState } from "react";
 import type { BitbucketCredentials } from "../providers/bitbucket-cloud/auth";
 import type { CodeReviewProvider, ProviderUser } from "../providers/contracts";
+import { Button } from "../ui/Button";
+import { Card } from "../ui/Card";
+import { TextField } from "../ui/TextField";
 
 export interface ConnectScreenProps {
   readonly onConnected: (
@@ -52,48 +50,42 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps): JSX.Element 
   return (
     <main className="app-shell connection-page">
       <Card className="connection-card">
-        <Card.Header className="connection-heading">
-          <div>
-            <Card.Title id="connection-title">Connect to Bitbucket Cloud</Card.Title>
-            <Card.Description className="connection-copy">
-              Use your Atlassian email and Bitbucket API token to load your open pull requests.
-            </Card.Description>
-          </div>
-        </Card.Header>
-        <Card.Content>
-          <form onSubmit={connect} className="connection-form">
-            <TextField name="revelioAtlassianEmail" fullWidth>
-              <Label>Atlassian email</Label>
-              <Input
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </TextField>
-            <TextField name="revelioBitbucketApiToken" fullWidth>
-              <Label>Bitbucket API token</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={apiToken}
-                onChange={(event) => setApiToken(event.target.value)}
-              />
-            </TextField>
-            <Button
-              type="submit"
-              variant="primary"
-              isDisabled={status === "loading" || email.trim() === "" || apiToken === ""}
-            >
-              {status === "loading" ? "Connecting…" : "Connect"}
-            </Button>
-          </form>
-          {error ? (
-            <p className="connection-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </Card.Content>
+        <div className="connection-heading">
+          <h2 id="connection-title">Connect to Bitbucket Cloud</h2>
+          <p className="connection-copy">
+            Use your Atlassian email and Bitbucket API token to load your open pull requests.
+          </p>
+        </div>
+        <form onSubmit={connect} className="connection-form">
+          <TextField
+            label="Atlassian email"
+            name="revelioAtlassianEmail"
+            type="email"
+            autoComplete="off"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+          <TextField
+            label="Bitbucket API token"
+            name="revelioBitbucketApiToken"
+            type="password"
+            autoComplete="new-password"
+            value={apiToken}
+            onChange={(event) => setApiToken(event.target.value)}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={status === "loading" || email.trim() === "" || apiToken === ""}
+          >
+            {status === "loading" ? "Connecting…" : "Connect"}
+          </Button>
+        </form>
+        {error ? (
+          <p className="connection-error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </Card>
     </main>
   );

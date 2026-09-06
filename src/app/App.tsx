@@ -1,5 +1,4 @@
 import "../styles.css";
-import { useTheme } from "@heroui/react";
 import type { JSX } from "react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ConnectScreen } from "../connection/ConnectScreen";
@@ -15,6 +14,7 @@ import type {
 } from "../providers/contracts";
 import type { RepositoryScope } from "../scope/repository-scope";
 import { type ThemeChoice, ThemeControl } from "../ui/ThemeControl";
+import { useThemePreference } from "../ui/useThemePreference";
 
 const ReviewScreen = lazy(() =>
   import("../review/ReviewScreen").then(({ ReviewScreen: screen }) => ({ default: screen })),
@@ -329,7 +329,7 @@ const readLockedOut = (): boolean => {
 
 export function App(): JSX.Element {
   const [appState, setAppState] = useState<AppState>({ screen: "restoring" });
-  const { theme, resolvedTheme, setTheme } = useTheme("system");
+  const { theme, resolvedTheme, setTheme } = useThemePreference();
   const selectedTheme: ThemeChoice = theme === "light" || theme === "dark" ? theme : "system";
   const diffTheme = resolvedTheme === "dark" ? "dark" : "light";
 

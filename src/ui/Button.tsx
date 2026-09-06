@@ -27,7 +27,20 @@ export const buttonVariants = cva(
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
   VariantProps<typeof buttonVariants> & { readonly asChild?: boolean };
 
-export function Button({ asChild, className, variant, size, ...props }: ButtonProps): JSX.Element {
+export function Button({
+  asChild,
+  className,
+  variant,
+  size,
+  type,
+  ...props
+}: ButtonProps): JSX.Element {
   const Comp = asChild ? Slot : "button";
-  return <Comp className={cn(buttonVariants({ variant, size }), className)} {...props} />;
+  return (
+    <Comp
+      className={cn(buttonVariants({ variant, size }), className)}
+      type={asChild ? type : (type ?? "button")}
+      {...props}
+    />
+  );
 }

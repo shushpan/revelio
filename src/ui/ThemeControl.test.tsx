@@ -9,9 +9,9 @@ describe("ThemeControl", () => {
     const onThemeChange = vi.fn();
     render(<ThemeControl theme="system" resolvedTheme="light" onThemeChange={onThemeChange} />);
 
-    expect(screen.getByRole("button", { name: "System" })).toHaveClass("button--primary");
-    expect(screen.getByRole("button", { name: "Light" })).toHaveClass("button--secondary");
-    expect(screen.getByRole("button", { name: "Dark" })).toHaveClass("button--secondary");
+    expect(screen.getByRole("button", { name: "System" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Light" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     expect(onThemeChange).toHaveBeenCalledWith("dark");

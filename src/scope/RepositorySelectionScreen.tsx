@@ -1,7 +1,7 @@
-import { Button } from "@heroui/react/button";
 import type { JSX } from "react";
 import { useState } from "react";
 import type { RepositoryRef } from "../providers/contracts";
+import { Button } from "../ui/Button";
 import type { RepositoryScope } from "./repository-scope";
 import { normalizeRepositoryScope } from "./repository-scope";
 
@@ -120,11 +120,11 @@ export function RepositorySelectionScreen({
       </fieldset>
       <div className="selection-actions">
         {onCancel ? (
-          <Button variant="secondary" onPress={onCancel}>
+          <Button variant="secondary" onClick={onCancel}>
             Cancel
           </Button>
         ) : null}
-        <Button variant="primary" onPress={save} isDisabled={isEmpty}>
+        <Button variant="primary" onClick={save} disabled={isEmpty}>
           Continue
         </Button>
       </div>
