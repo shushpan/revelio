@@ -795,7 +795,7 @@ export function App(): JSX.Element {
 
   return (
     <>
-      {appState.screen !== "review" ? (
+      {appState.screen !== "review" && appState.screen !== "inbox" ? (
         <header className="app-shell app-header">
           <div>
             <p className="eyebrow">Personal review workspace</p>
@@ -882,6 +882,9 @@ export function App(): JSX.Element {
           onRefresh={refresh}
           onManageRepositories={manage}
           onLock={lock}
+          theme={selectedTheme}
+          resolvedTheme={diffTheme}
+          onThemeChange={setTheme}
         />
       ) : null}
       {appState.screen === "review" ? (

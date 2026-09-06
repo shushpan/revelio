@@ -645,7 +645,7 @@ describe("Revelio shell", () => {
     expect(await screen.findByRole("button", { name: "Queue (1)" })).toBeInTheDocument();
   });
 
-  it("hides the global masthead only while reviewing, showing the compact toolbar instead", async () => {
+  it("hides the global masthead on the inbox and review full-screen surfaces, showing their own compact toolbars instead", async () => {
     const requestedPullRequest = {
       ref: { repository: { workspace: "alpha", slug: "one" }, id: 1 },
       title: "Improve caching",
@@ -665,7 +665,9 @@ describe("Revelio shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
 
-    expect(screen.getByRole("heading", { name: "Revelio" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: "Revelio" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Open pull requests" })).toBeInTheDocument();
 
     fireEvent.click(await screen.findByText("Improve caching"));
 

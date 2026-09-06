@@ -39,6 +39,9 @@ const renderInbox = (overrides: Partial<InboxLoadSnapshot> = {}) =>
       onRefresh={vi.fn()}
       onManageRepositories={vi.fn()}
       onLock={vi.fn()}
+      theme="system"
+      resolvedTheme="light"
+      onThemeChange={vi.fn()}
     />,
   );
 
@@ -196,6 +199,9 @@ describe("InboxScreen", () => {
         onRefresh={vi.fn()}
         onManageRepositories={vi.fn()}
         onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
       />,
     );
     const search = screen.getByRole("searchbox") as HTMLInputElement;
@@ -238,6 +244,9 @@ describe("InboxScreen", () => {
         onRefresh={vi.fn()}
         onManageRepositories={vi.fn()}
         onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
       />,
     );
     const search = screen.getByRole("searchbox") as HTMLInputElement;
@@ -266,6 +275,9 @@ describe("InboxScreen", () => {
         onRefresh={vi.fn()}
         onManageRepositories={vi.fn()}
         onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
       />,
     );
     const search = screen.getByRole("searchbox") as HTMLInputElement;
@@ -297,10 +309,104 @@ describe("InboxScreen", () => {
         onRefresh={vi.fn()}
         onManageRepositories={onManageRepositories}
         onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Manage repositories" }));
     expect(onManageRepositories).toHaveBeenCalled();
+  });
+
+  it("calls onRefresh from the Refresh action", () => {
+    const onRefresh = vi.fn();
+    render(
+      <InboxScreen
+        user={user}
+        inbox={snapshot()}
+        reviewed={{}}
+        onSelect={vi.fn()}
+        onRefresh={onRefresh}
+        onManageRepositories={vi.fn()}
+        onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it("calls onLock from the Lock action", () => {
+    const onLock = vi.fn();
+    render(
+      <InboxScreen
+        user={user}
+        inbox={snapshot()}
+        reviewed={{}}
+        onSelect={vi.fn()}
+        onRefresh={vi.fn()}
+        onManageRepositories={vi.fn()}
+        onLock={onLock}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Lock" }));
+    expect(onLock).toHaveBeenCalled();
+  });
+
+  it("renders the dense toolbar as a header inside the full-screen inbox surface, with the shared theme control", () => {
+    renderInbox();
+
+    const main = document.querySelector("main.inbox-page");
+    const toolbar = main?.querySelector("header.inbox-toolbar");
+    expect(toolbar).not.toBeNull();
+    expect(toolbar).toContainElement(screen.getByRole("heading", { name: "Open pull requests" }));
+    expect(toolbar).toContainElement(screen.getByRole("searchbox"));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Requested" }));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "Manage repositories" }));
+    expect(toolbar).toContainElement(screen.getByRole("button", { name: "System" }));
+  });
+
+  it("calls the shared theme control's onThemeChange with existing semantics", () => {
+    const onThemeChange = vi.fn();
+    render(
+      <InboxScreen
+        user={user}
+        inbox={snapshot()}
+        reviewed={{}}
+        onSelect={vi.fn()}
+        onRefresh={vi.fn()}
+        onManageRepositories={vi.fn()}
+        onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={onThemeChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    expect(onThemeChange).toHaveBeenCalledWith("dark");
+  });
+
+  it("shows dense row metadata: repository, author, pull request state, and reviewer status", () => {
+    const pullRequest = pullRequestFor("repo-a", "2026-08-29T10:00:00Z");
+    renderInbox({
+      pullRequests: [pullRequest],
+      totalRepositories: 1,
+      completedRepositories: 1,
+    });
+
+    const row = screen.getByRole("button", { name: /PR for repo-a/ });
+    expect(row).toHaveTextContent("acme/repo-a");
+    expect(row).toHaveTextContent("Author");
+    expect(row).toHaveTextContent("OPEN");
+    expect(row).toHaveTextContent("Needs my review");
   });
 });

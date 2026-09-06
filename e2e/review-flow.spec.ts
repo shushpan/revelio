@@ -326,6 +326,73 @@ test("Review is a full-viewport workspace with a 49px toolbar and no global mast
   }
 });
 
+test("Inbox is a full-screen workspace with a 49px toolbar and no global masthead", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await expect(page.getByRole("heading", { name: "Open pull requests" })).toBeVisible();
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect(page.locator("header.app-header")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Revelio" })).toHaveCount(0);
+
+    const toolbarRect = await page
+      .locator("main.inbox-page > header")
+      .evaluate((element) => element.getBoundingClientRect());
+    expect(toolbarRect.height).toBe(49);
+
+    const rootRect = await page
+      .locator("main.inbox-page")
+      .evaluate((element) => element.getBoundingClientRect());
+    expect(rootRect.width).toBe(viewport.width);
+    expect(rootRect.height).toBe(viewport.height);
+  }
+});
+
+test("Inbox toolbar and row text truncate instead of causing horizontal overflow at 390x844", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await expect(page.getByText("acme/tools")).toBeVisible();
+
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+  expect(scrollWidth).toBeLessThanOrEqual(390);
+
+  const identityOverflow = await page
+    .locator(".inbox-toolbar-identity h2")
+    .evaluate((element) => getComputedStyle(element).textOverflow);
+  expect(identityOverflow).toBe("ellipsis");
+
+  const rowTitleOverflow = await page
+    .locator(".inbox-row-main strong")
+    .first()
+    .evaluate((element) => getComputedStyle(element).textOverflow);
+  expect(rowTitleOverflow).toBe("ellipsis");
+});
+
 test("keeps toolbar keyboard focus order monotonic with exactly one visible Finish Review button at each breakpoint", async ({
   page,
 }) => {

@@ -1,8 +1,9 @@
-import { Button } from "@heroui/react/button";
-import { Chip } from "@heroui/react/chip";
 import type { JSX } from "react";
 import { useMemo, useState } from "react";
 import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
+import { Button } from "../ui/Button";
+import { Chip } from "../ui/Chip";
+import { type ThemeChoice, ThemeControl } from "../ui/ThemeControl";
 import type { InboxLoadSnapshot } from "./load-inbox";
 import {
   hasTerm,
@@ -61,6 +62,9 @@ export interface InboxScreenProps {
   readonly onRefresh: () => void;
   readonly onManageRepositories: () => void;
   readonly onLock: () => void;
+  readonly theme: ThemeChoice;
+  readonly resolvedTheme: "light" | "dark";
+  readonly onThemeChange: (theme: ThemeChoice) => void;
 }
 
 export function InboxScreen({
@@ -72,6 +76,9 @@ export function InboxScreen({
   onRefresh,
   onManageRepositories,
   onLock,
+  theme,
+  resolvedTheme,
+  onThemeChange,
 }: InboxScreenProps): JSX.Element {
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const { pullRequests, failures, totalRepositories, completedRepositories, isComplete } = inbox;
@@ -98,26 +105,12 @@ export function InboxScreen({
     queryIssues.length === 0 && isComplete && failures.length === 0 && !refreshError;
 
   return (
-    <main className="app-shell inbox-page">
-      <div className="inbox-toolbar">
-        <div>
-          <p className="eyebrow">Review inbox</p>
+    <main className="inbox-page">
+      <header className="inbox-toolbar">
+        <div className="inbox-toolbar-identity">
           <h2>Open pull requests</h2>
-          <p className="inbox-copy">Signed in as {user.displayName}</p>
+          <span className="inbox-toolbar-user">Signed in as {user.displayName}</span>
         </div>
-        <div className="inbox-actions">
-          <Button variant="secondary" onPress={onManageRepositories}>
-            Manage repositories
-          </Button>
-          <Button variant="secondary" onPress={onRefresh}>
-            Refresh
-          </Button>
-          <Button variant="secondary" onPress={onLock}>
-            Lock
-          </Button>
-        </div>
-      </div>
-      <div className="inbox-filters">
         <label className="inbox-search">
           <span className="sr-only">Filter pull requests</span>
           <input
@@ -136,74 +129,86 @@ export function InboxScreen({
             return (
               <Button
                 key={term}
+                size="sm"
                 variant={active ? "primary" : "secondary"}
                 aria-pressed={active}
-                onPress={() => setQuery((current) => toggleQuickFilter(current, term))}
+                onClick={() => setQuery((current) => toggleQuickFilter(current, term))}
               >
                 {label}
               </Button>
             );
           })}
         </div>
+        <div className="inbox-actions">
+          <Button size="sm" variant="secondary" onClick={onManageRepositories}>
+            Manage repositories
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onRefresh}>
+            Refresh
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onLock}>
+            Lock
+          </Button>
+        </div>
+        <ThemeControl theme={theme} resolvedTheme={resolvedTheme} onThemeChange={onThemeChange} />
+      </header>
+      <div className="inbox-body">
+        {queryIssues.map((issue) => (
+          <p key={`${issue.reason}:${issue.token}`} className="inbox-warning" role="status">
+            {validationMessage(issue)}
+          </p>
+        ))}
+        <p className="inbox-copy" role="status">
+          Loaded {completedRepositories} of {totalRepositories} repositories - {pullRequests.length}{" "}
+          pull requests found.
+          {isNarrowed
+            ? ` Showing ${visiblePullRequests.length} of ${pullRequests.length} actionable.`
+            : ""}
+        </p>
+        {refreshError ? (
+          <p className="inbox-warning" role="alert">
+            {refreshError}
+          </p>
+        ) : null}
+        {failures.length > 0 ? (
+          <p className="inbox-warning" role="status">
+            Results are incomplete: {failures.length} repositories could not be loaded.
+          </p>
+        ) : null}
+        <ul className="inbox-list">
+          {visiblePullRequests.map((pullRequest) => {
+            const isReviewer = pullRequest.reviewerIds.includes(user.id);
+            return (
+              <li key={pullRequestKey(pullRequest)}>
+                <button className="inbox-row" type="button" onClick={() => onSelect(pullRequest)}>
+                  <span className="inbox-row-main">
+                    <span className="inbox-repository">
+                      {pullRequest.ref.repository.workspace}/{pullRequest.ref.repository.slug}
+                    </span>
+                    <strong>{pullRequest.title}</strong>
+                    <span className="inbox-branches">
+                      {pullRequest.sourceBranch} → {pullRequest.targetBranch}
+                    </span>
+                  </span>
+                  <span className="inbox-row-meta">
+                    {isReviewer ? <Chip variant="accent">Needs my review</Chip> : null}
+                    <Chip variant="neutral">{pullRequest.state}</Chip>
+                    <span>{pullRequest.author.displayName}</span>
+                    <time dateTime={pullRequest.updatedAt}>
+                      {formatUpdatedAt(pullRequest.updatedAt)}
+                    </time>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {visiblePullRequests.length === 0 && canShowEmptyCopy ? (
+          <p className="inbox-empty" role="status">
+            No pull requests in this view.
+          </p>
+        ) : null}
       </div>
-      {queryIssues.map((issue) => (
-        <p key={`${issue.reason}:${issue.token}`} className="inbox-warning" role="status">
-          {validationMessage(issue)}
-        </p>
-      ))}
-      <p className="inbox-copy" role="status">
-        Loaded {completedRepositories} of {totalRepositories} repositories - {pullRequests.length}{" "}
-        pull requests found.
-        {isNarrowed
-          ? ` Showing ${visiblePullRequests.length} of ${pullRequests.length} actionable.`
-          : ""}
-      </p>
-      {refreshError ? (
-        <p className="inbox-warning" role="alert">
-          {refreshError}
-        </p>
-      ) : null}
-      {failures.length > 0 ? (
-        <p className="inbox-warning" role="status">
-          Results are incomplete: {failures.length} repositories could not be loaded.
-        </p>
-      ) : null}
-      <ul className="inbox-list">
-        {visiblePullRequests.map((pullRequest) => {
-          const isReviewer = pullRequest.reviewerIds.includes(user.id);
-          return (
-            <li key={pullRequestKey(pullRequest)}>
-              <button className="inbox-row" type="button" onClick={() => onSelect(pullRequest)}>
-                <span className="inbox-row-main">
-                  <span className="inbox-repository">
-                    {pullRequest.ref.repository.workspace}/{pullRequest.ref.repository.slug}
-                  </span>
-                  <strong>{pullRequest.title}</strong>
-                  <span className="inbox-branches">
-                    {pullRequest.sourceBranch} → {pullRequest.targetBranch}
-                  </span>
-                </span>
-                <span className="inbox-row-meta">
-                  {isReviewer ? (
-                    <Chip color="accent" variant="soft">
-                      Needs my review
-                    </Chip>
-                  ) : null}
-                  <span>{pullRequest.author.displayName}</span>
-                  <time dateTime={pullRequest.updatedAt}>
-                    {formatUpdatedAt(pullRequest.updatedAt)}
-                  </time>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {visiblePullRequests.length === 0 && canShowEmptyCopy ? (
-        <p className="inbox-empty" role="status">
-          No pull requests in this view.
-        </p>
-      ) : null}
     </main>
   );
 }
