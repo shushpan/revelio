@@ -265,9 +265,12 @@ test("connects to a cross-repository inbox, opens a real diff, and sends a gener
   await expect(page.getByRole("tab", { name: "Tree" })).toBeVisible();
   await expect(page.locator(".diff-view")).toContainText("export const reviewed = true;");
 
-  await page.getByRole("textbox", { name: "General comment" }).fill("Looks good");
-  await page.getByRole("button", { name: "Send comment" }).click();
-  await expect(page.locator(".review-notice")).toHaveText("Comment sent.");
+  await page.getByRole("button", { name: "Finish Review" }).click();
+  const finishDialog = page.getByRole("dialog", { name: "Finish Review" });
+  await finishDialog.getByRole("textbox", { name: "General comment" }).fill("Looks good");
+  await finishDialog.getByRole("button", { name: "Add comment" }).click();
+  await finishDialog.getByRole("button", { name: "Send now" }).click();
+  await expect(finishDialog.locator(".review-notice")).toHaveText("Comment sent.");
   expect(fixtures.observedRequests()).toEqual([
     "GET /2.0/user",
     "GET /2.0/user/workspaces",
@@ -432,6 +435,52 @@ test("Finish Review persists the review checkpoint before advancing the captured
   await page.getByRole("button", { name: "Back to inbox" }).click();
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(page.getByRole("button", { name: /Fresh review arrives/ })).toBeVisible();
+});
+
+test("the Finish Review dialog is cancellable, Escape-closable, and focus-trapped without submitting", async ({
+  page,
+}) => {
+  await installBitbucketFixtures(page);
+  await page.goto("/");
+  await page.getByLabel("Atlassian email").fill(credentials.email);
+  await page.getByLabel("Bitbucket API token").fill(credentials.token);
+  await page.getByRole("button", { name: "Connect" }).click();
+  await page.getByRole("checkbox", { name: "acme", exact: true }).check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("button", { name: "This session only" }).click();
+
+  await expect(page.getByText("acme/review")).toBeVisible();
+  await page.getByLabel("Filter pull requests").fill("");
+  await page.getByRole("button", { name: /acme\/review/ }).click();
+
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const finishTrigger = page.getByRole("button", { name: "Finish Review" });
+    await finishTrigger.click();
+    const dialog = page.getByRole("dialog", { name: "Finish Review" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute("aria-modal", "true");
+
+    for (let step = 0; step < 10; step += 1) {
+      await page.keyboard.press("Tab");
+      await expect
+        .poll(() => dialog.evaluate((element) => element.contains(document.activeElement)))
+        .toBe(true);
+    }
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).not.toBeVisible();
+    await expect(finishTrigger).toBeFocused();
+
+    await finishTrigger.click();
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(dialog).not.toBeVisible();
+    await expect(finishTrigger).toBeFocused();
+  }
 });
 
 test("selecting a Tree row scrolls the diff, and the Tree survives two Tree ↔ Description cycles", async ({

@@ -36,7 +36,7 @@ describe("QueueDrawer", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("renders one row per queue entry with the current one marked", () => {
+  it("renders one row per queue entry with the current one marked, named Review queue", () => {
     render(
       <QueueDrawer
         queue={queue}
@@ -46,6 +46,7 @@ describe("QueueDrawer", () => {
         onClose={vi.fn()}
       />,
     );
+    expect(screen.getByRole("dialog", { name: "Review queue" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /First PR/ })).toBeInTheDocument();
     const current = screen.getByRole("button", { name: /Second PR/ });
     expect(current).toHaveAttribute("aria-current", "true");
@@ -81,7 +82,7 @@ describe("QueueDrawer", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("calls onClose when the backdrop is clicked", () => {
+  it("calls onClose when Close is activated", () => {
     const onClose = vi.fn();
     render(
       <QueueDrawer
@@ -92,7 +93,22 @@ describe("QueueDrawer", () => {
         onClose={onClose}
       />,
     );
-    fireEvent.click(screen.getByLabelText("Close review queue"));
+    fireEvent.click(screen.getByRole("button", { name: "Close review queue" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("disables row selection and close while busy", () => {
+    render(
+      <QueueDrawer
+        queue={queue}
+        currentIndex={0}
+        isOpen={true}
+        busy={true}
+        onSelect={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /First PR/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close review queue" })).toBeDisabled();
   });
 });

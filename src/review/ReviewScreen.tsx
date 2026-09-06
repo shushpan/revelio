@@ -1,4 +1,3 @@
-import { Button } from "@heroui/react/button";
 import { Effect } from "effect";
 import type { JSX } from "react";
 import { useEffect, useState } from "react";
@@ -13,6 +12,7 @@ import { DropdownMenuItem } from "../ui/DropdownMenu";
 import type { ThemeChoice } from "../ui/ThemeControl";
 import { shouldUseDiffsWorkerPool } from "../workers/diffs-worker-gate";
 import { type DiffIndicatorsOption, type DiffLayout, DiffReview } from "./DiffReview";
+import { FinishReviewDialog } from "./FinishReviewDialog";
 import type { PreparedPatchFile } from "./patch";
 import { QueueDrawer } from "./QueueDrawer";
 import { ReviewToolbar } from "./ReviewToolbar";
@@ -21,6 +21,7 @@ import {
   FinishReviewError,
   type FinishReviewOutcome,
   type FinishReviewReceipt,
+  type PendingReviewComment,
   finishReview,
 } from "./finish-review";
 
@@ -95,6 +96,7 @@ export function ReviewScreen({
   const [workerPoolEnabled, setWorkerPoolEnabled] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishAttempt, setFinishAttempt] = useState<FinishAttempt | undefined>();
+  const [drafts, setDrafts] = useState<ReadonlyArray<PendingReviewComment>>([]);
   const [layout, setLayout] = useState<DiffLayout>(
     () => readStoredDiffLayout() ?? defaultDiffLayout(),
   );
@@ -112,6 +114,10 @@ export function ReviewScreen({
     setFiles([]);
     setSelectedPath(null);
     setQueueOpen(false);
+    setComment("");
+    setInlineIntent(null);
+    setDrafts([]);
+    setFinishOpen(false);
     void Effect.runPromise(provider.getPullRequestDiff(pullRequest.ref))
       .then((nextPatch) => {
         if (active) setPatch(nextPatch);
@@ -165,7 +171,7 @@ export function ReviewScreen({
       {
         pullRequestKey: currentPullRequestKey,
         reviewedHeadCommit: pullRequest.sourceCommit,
-        comments: [],
+        comments: drafts,
         outcome,
         previousReceipt,
       },
@@ -178,7 +184,12 @@ export function ReviewScreen({
           if (!current) throw new Error("Pull request is no longer open.");
           return current.sourceCommit;
         },
-        sendComment: async () => undefined,
+        sendComment: async (draftComment) => {
+          const operation = draftComment.anchor
+            ? provider.addInlineComment(pullRequest.ref, draftComment.text, draftComment.anchor)
+            : provider.addGeneralComment(pullRequest.ref, draftComment.text);
+          await Effect.runPromise(operation);
+        },
         applyDecision: async (decision) => {
           if (decision === "approved") {
             await Effect.runPromise(provider.approvePullRequest(pullRequest.ref));
@@ -194,6 +205,7 @@ export function ReviewScreen({
         setAction(null);
         setFinishOpen(false);
         setFinishAttempt(undefined);
+        setDrafts([]);
         advanceAfterCheckpoint();
       })
       .catch((error: unknown) => {
@@ -211,20 +223,29 @@ export function ReviewScreen({
       });
   };
 
-  const submitComment = (): void => {
+  const addDraft = (): void => {
     const text = comment.trim();
     if (text === "") return;
-    setAction("Comment");
+    const anchor = inlineIntent ?? undefined;
+    setDrafts((current) => [
+      ...current,
+      { id: crypto.randomUUID(), text, ...(anchor ? { anchor } : {}) },
+    ]);
+    setComment("");
+    setInlineIntent(null);
+  };
+
+  const sendDraftNow = (draft: PendingReviewComment): void => {
+    setAction("Send comment");
     setNotice(null);
-    const operation = inlineIntent
-      ? provider.addInlineComment(pullRequest.ref, text, inlineIntent)
-      : provider.addGeneralComment(pullRequest.ref, text);
+    const operation = draft.anchor
+      ? provider.addInlineComment(pullRequest.ref, draft.text, draft.anchor)
+      : provider.addGeneralComment(pullRequest.ref, draft.text);
     void Effect.runPromise(operation)
       .then(() => {
         setAction(null);
-        setNotice(inlineIntent ? "Inline comment sent." : "Comment sent.");
-        setComment("");
-        setInlineIntent(null);
+        setNotice(draft.anchor ? "Inline comment sent." : "Comment sent.");
+        setDrafts((current) => current.filter((item) => item.id !== draft.id));
       })
       .catch(() => {
         setAction(null);
@@ -273,7 +294,10 @@ export function ReviewScreen({
         busy={isActionInFlight}
         onBack={onBack}
         onQueue={() => setQueueOpen(true)}
-        onFinish={() => setFinishOpen(true)}
+        onFinish={() => {
+          setQueueOpen(false);
+          setFinishOpen(true);
+        }}
         theme={theme}
         resolvedTheme={themeType}
         onThemeChange={onThemeChange}
@@ -290,64 +314,6 @@ export function ReviewScreen({
         displayOptions={displayOptions}
       />
       <div className="review-body">
-        {finishOpen ? (
-          <section className="review-finish" role="dialog" aria-label="Finish Review">
-            <p>Choose how to finish this review.</p>
-            {provider.capabilities.canWriteReviews ? (
-              <>
-                <Button
-                  variant="secondary"
-                  isDisabled={action !== null}
-                  onPress={() => finish("approved")}
-                >
-                  Approve
-                </Button>
-                <Button
-                  variant="secondary"
-                  isDisabled={action !== null}
-                  onPress={() => finish("changes_requested")}
-                >
-                  Request changes
-                </Button>
-              </>
-            ) : (
-              <p>Remote review decisions are unavailable for this connection.</p>
-            )}
-            <Button
-              variant="primary"
-              isDisabled={action !== null}
-              onPress={() => finish("reviewed")}
-            >
-              Reviewed
-            </Button>
-          </section>
-        ) : null}
-        {notice ? (
-          <p className="review-notice" role="status">
-            {notice}
-          </p>
-        ) : null}
-        <section className="review-comment-box" aria-label="Review comment">
-          {inlineIntent ? (
-            <p className="inline-comment-context">
-              Commenting on {inlineIntent.path}:{inlineIntent.line}
-            </p>
-          ) : null}
-          <textarea
-            aria-label={inlineIntent ? "Inline comment" : "General comment"}
-            placeholder={inlineIntent ? "Leave an inline comment" : "Leave a general comment"}
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            rows={2}
-          />
-          <Button
-            variant="secondary"
-            isDisabled={action !== null || comment.trim() === ""}
-            onPress={submitComment}
-          >
-            {inlineIntent ? "Send inline comment" : "Send comment"}
-          </Button>
-        </section>
         {patch !== null ? (
           <div className="review-main">
             <Sidebar
@@ -370,12 +336,13 @@ export function ReviewScreen({
               activePath={selectedPath}
               onActivePathChange={setSelectedPath}
               onFilesChange={setFiles}
-              onInlineComment={(intent) =>
+              onInlineComment={(intent) => {
                 setInlineIntent({
                   ...intent,
                   side: intent.side === "additions" ? "new" : "old",
-                })
-              }
+                });
+                setFinishOpen(true);
+              }}
             />
           </div>
         ) : (
@@ -384,10 +351,25 @@ export function ReviewScreen({
           </p>
         )}
       </div>
+      <FinishReviewDialog
+        isOpen={finishOpen}
+        onClose={() => setFinishOpen(false)}
+        canWriteReviews={provider.capabilities.canWriteReviews}
+        busy={isActionInFlight}
+        drafts={drafts}
+        comment={comment}
+        onCommentChange={setComment}
+        inlineIntent={inlineIntent}
+        onAddDraft={addDraft}
+        onSendDraftNow={sendDraftNow}
+        onFinish={finish}
+        notice={notice}
+      />
       <QueueDrawer
         queue={queue}
         currentIndex={queueIndex}
         isOpen={queueOpen}
+        busy={isActionInFlight}
         onSelect={(next) => {
           if (isActionInFlight) return;
           setQueueOpen(false);
