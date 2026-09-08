@@ -38,8 +38,8 @@ export function VaultScreen({
           <h2>{isSetup ? "Keep Revelio ready" : "Unlock Revelio"}</h2>
           <p className="connection-copy">
             {isSetup
-              ? "Save an encrypted local vault to reopen Revelio without entering your token for one week."
-              : "The trusted browser window expired or was locked. Unlock the local vault to continue."}
+              ? "Save an encrypted local vault to reopen Revelio without entering your token for one week. An open session still locks automatically after 15 minutes of inactivity."
+              : "The trusted browser window expired, the session locked after 15 minutes of inactivity, or you chose Lock. Unlock the local vault to continue."}
           </p>
         </div>
         <div className="vault-actions">

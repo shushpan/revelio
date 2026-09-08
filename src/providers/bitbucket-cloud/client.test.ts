@@ -57,7 +57,7 @@ describe("Bitbucket read client", () => {
       {
         ref: { repository: { workspace: "acme", slug: "review" }, id: 7 },
         state: "OPEN",
-        sourceBranch: "feature/review-queue",
+        sourceBranch: "feature/review-flow",
         targetBranch: "main",
       },
     ]);

@@ -260,6 +260,7 @@ describe("Revelio shell", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -642,7 +643,13 @@ describe("Revelio shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Requested" }));
     fireEvent.click(await screen.findByText("Standalone manual review"));
 
-    expect(await screen.findByRole("button", { name: "Queue (1)" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Standalone manual review/ })).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(
+      screen.queryByRole("button", { name: /Other unrelated review/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the global masthead on the inbox and review full-screen surfaces, showing their own compact toolbars instead", async () => {
@@ -676,7 +683,8 @@ describe("Revelio shell", () => {
     );
     expect(screen.queryByRole("banner", { name: /revelio/i })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /Queue \(/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
+    expect(screen.getByRole("tab", { name: "Inbox" })).toBeVisible();
     expect(screen.getAllByRole("button", { name: "Finish Review" })).toHaveLength(2);
   });
 
@@ -755,6 +763,54 @@ describe("Revelio shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Lock" }));
 
     await waitFor(() => expect(activeVault?.clearTrustedBrowser).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
+  });
+
+  it("locks an authenticated session automatically after 15 minutes of inactivity", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<App />);
+    await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+
+    await waitFor(() => expect(activeVault?.clearTrustedBrowser).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
+  });
+
+  it("resets the inactivity timer on user activity instead of locking early", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<App />);
+    await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+    fireEvent.keyDown(document, { key: "a" });
+    await vi.advanceTimersByTimeAsync(14 * 60 * 1000);
+
+    expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument();
+    expect(activeVault?.clearTrustedBrowser).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60 * 1000 + 1);
+    await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
+  });
+
+  it("locks on return when a throttled background timer missed the inactivity deadline", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    render(<App />);
+    await connectWith(buildProvider());
+    fireEvent.click(await screen.findByRole("button", { name: "Save selection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use passphrase" }));
+    await waitFor(() => expect(screen.getByText("Signed in as Reviewer")).toBeInTheDocument());
+
+    vi.setSystemTime(Date.now() + 15 * 60 * 1000 + 1);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+
     await waitFor(() => expect(screen.getByText("unlock-revelio-screen")).toBeInTheDocument());
   });
 

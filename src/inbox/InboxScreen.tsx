@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ProviderUser, PullRequestSummary } from "../providers/contracts";
 import { Button } from "../ui/Button";
 import { Chip } from "../ui/Chip";
@@ -13,10 +13,16 @@ import {
   toggleTerm,
   validateQuery,
 } from "./query";
+import { formatRelativeAge } from "./relative-time";
 
 export { pullRequestKey };
 
 const DEFAULT_QUERY = "reviewer:@me is:unreviewed";
+
+/** Fixed, small placeholder count while more repositories are still loading
+ * - not a progress estimate, just enough to signal "more is coming" without
+ * replacing the rows already loaded. */
+const PENDING_ROW_SKELETON_COUNT = 3;
 
 const QUICK_FILTERS: ReadonlyArray<{ readonly label: string; readonly term: string }> = [
   { label: "Requested", term: "reviewer:@me" },
@@ -53,6 +59,19 @@ const validationMessage = (issue: ReturnType<typeof validateQuery>[number]): str
   }
 };
 
+const isEditableTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.tagName === "SELECT" ||
+    target.isContentEditable
+  );
+};
+
+const requestsReviewFrom = (pullRequest: PullRequestSummary, userId: string): boolean =>
+  pullRequest.reviewerIds.some((id) => id.toLowerCase() === userId.toLowerCase());
+
 export interface InboxScreenProps {
   readonly user: ProviderUser;
   readonly inbox: InboxLoadSnapshot;
@@ -81,6 +100,8 @@ export function InboxScreen({
   onThemeChange,
 }: InboxScreenProps): JSX.Element {
   const [query, setQuery] = useState(DEFAULT_QUERY);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
   const { pullRequests, failures, totalRepositories, completedRepositories, isComplete } = inbox;
   const reviewedKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -97,12 +118,52 @@ export function InboxScreen({
     const ctx = { currentUserId: user.id, reviewed: reviewedKeys };
     return pullRequests.filter((pullRequest) => matchesQuery(pullRequest, parsed, ctx));
   }, [pullRequests, query, queryIssues.length, reviewedKeys, user.id]);
+  // Actionable (requested-of-me, unreviewed) work surfaces oldest first so it
+  // reads as a worklist; everything else keeps the snapshot's own order.
+  const orderedPullRequests = useMemo(() => {
+    const actionable: PullRequestSummary[] = [];
+    const rest: PullRequestSummary[] = [];
+    for (const pullRequest of visiblePullRequests) {
+      const isActionable =
+        requestsReviewFrom(pullRequest, user.id) && !reviewedKeys.has(pullRequestKey(pullRequest));
+      (isActionable ? actionable : rest).push(pullRequest);
+    }
+    actionable.sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : a.updatedAt > b.updatedAt ? 1 : 0));
+    return [...actionable, ...rest];
+  }, [visiblePullRequests, reviewedKeys, user.id]);
   const isNarrowed =
     queryIssues.length === 0 &&
     query.trim().length > 0 &&
     visiblePullRequests.length !== pullRequests.length;
   const canShowEmptyCopy =
     queryIssues.length === 0 && isComplete && failures.length === 0 && !refreshError;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const editable = isEditableTarget(event.target);
+      if (event.key === "/" && !editable) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+        return;
+      }
+      if (editable) return;
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      const rows = Array.from(
+        listRef.current?.querySelectorAll<HTMLButtonElement>(".inbox-row") ?? [],
+      );
+      if (rows.length === 0) return;
+      const currentIndex = rows.indexOf(document.activeElement as HTMLButtonElement);
+      const nextIndex =
+        event.key === "ArrowDown"
+          ? Math.min(rows.length - 1, currentIndex + 1)
+          : Math.max(0, currentIndex === -1 ? 0 : currentIndex - 1);
+      event.preventDefault();
+      rows[nextIndex]?.focus();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <main className="inbox-page">
@@ -114,6 +175,7 @@ export function InboxScreen({
         <label className="inbox-search">
           <span className="sr-only">Filter pull requests</span>
           <input
+            ref={searchInputRef}
             type="search"
             className="inbox-search-input"
             placeholder="Filter pull requests (e.g. reviewer:@me is:unreviewed)"
@@ -172,18 +234,29 @@ export function InboxScreen({
         ) : null}
         {failures.length > 0 ? (
           <p className="inbox-warning" role="status">
-            Results are incomplete: {failures.length} repositories could not be loaded.
+            Results are incomplete: {failures.length} repositories could not be loaded (
+            {failures
+              .map((failure) => `${failure.repository.workspace}/${failure.repository.slug}`)
+              .join(", ")}
+            ).
           </p>
         ) : null}
-        <ul className="inbox-list">
-          {visiblePullRequests.map((pullRequest) => {
-            const isReviewer = pullRequest.reviewerIds.includes(user.id);
+        <ul className="inbox-list" ref={listRef}>
+          {orderedPullRequests.map((pullRequest) => {
+            const isReviewer = requestsReviewFrom(pullRequest, user.id);
+            const isAuthor = pullRequest.author.id === user.id;
+            const attentionReason = isReviewer
+              ? "Needs my review"
+              : isAuthor
+                ? "Authored by me"
+                : null;
             return (
               <li key={pullRequestKey(pullRequest)}>
                 <button className="inbox-row" type="button" onClick={() => onSelect(pullRequest)}>
                   <span className="inbox-row-main">
                     <span className="inbox-repository">
-                      {pullRequest.ref.repository.workspace}/{pullRequest.ref.repository.slug}
+                      {pullRequest.ref.repository.workspace}/{pullRequest.ref.repository.slug} #
+                      {pullRequest.ref.id}
                     </span>
                     <strong>{pullRequest.title}</strong>
                     <span className="inbox-branches">
@@ -191,17 +264,30 @@ export function InboxScreen({
                     </span>
                   </span>
                   <span className="inbox-row-meta">
-                    {isReviewer ? <Chip variant="accent">Needs my review</Chip> : null}
+                    {attentionReason ? <Chip variant="accent">{attentionReason}</Chip> : null}
                     <Chip variant="neutral">{pullRequest.state}</Chip>
                     <span>{pullRequest.author.displayName}</span>
-                    <time dateTime={pullRequest.updatedAt}>
-                      {formatUpdatedAt(pullRequest.updatedAt)}
+                    <time
+                      dateTime={pullRequest.updatedAt}
+                      title={formatUpdatedAt(pullRequest.updatedAt)}
+                    >
+                      {formatRelativeAge(pullRequest.updatedAt)}
                     </time>
                   </span>
                 </button>
               </li>
             );
           })}
+          {!isComplete
+            ? Array.from({ length: PENDING_ROW_SKELETON_COUNT }, (_, index) => (
+                <li
+                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length static skeleton, never reordered.
+                  key={`inbox-row-skeleton-${index}`}
+                  className="inbox-row-skeleton"
+                  aria-hidden="true"
+                />
+              ))
+            : null}
         </ul>
         {visiblePullRequests.length === 0 && canShowEmptyCopy ? (
           <p className="inbox-empty" role="status">

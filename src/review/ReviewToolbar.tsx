@@ -56,13 +56,19 @@ const DisplayOptionsIcon = (): JSX.Element => (
     <path d="M8 2v2M8 12v2M2 8h2M12 8h2M3.8 3.8l1.4 1.4M10.8 10.8l1.4 1.4M3.8 12.2l1.4-1.4M10.8 5.2l1.4-1.4" />
   </ToolbarSvgIcon>
 );
+const SidebarToggleIcon = (): JSX.Element => (
+  <ToolbarSvgIcon>
+    <rect x="2" y="3" width="12" height="10" rx="1" />
+    <path d="M6.5 3v10" />
+  </ToolbarSvgIcon>
+);
 
 export interface ReviewToolbarProps {
   readonly pullRequest: PullRequestSummary;
-  readonly queueCount: number;
+  readonly sidebarCollapsed: boolean;
   readonly busy: boolean;
   readonly onBack: () => void;
-  readonly onQueue: () => void;
+  readonly onToggleSidebar: () => void;
   readonly onFinish: () => void;
   readonly theme: ThemeChoice;
   readonly resolvedTheme: "light" | "dark";
@@ -76,10 +82,10 @@ export interface ReviewToolbarProps {
 
 export function ReviewToolbar({
   pullRequest,
-  queueCount,
+  sidebarCollapsed,
   busy,
   onBack,
-  onQueue,
+  onToggleSidebar,
   onFinish,
   theme,
   resolvedTheme,
@@ -91,6 +97,7 @@ export function ReviewToolbar({
   displayOptions,
 }: ReviewToolbarProps): JSX.Element {
   const collapseAllLabel = collapsedAll ? "Expand all files" : "Collapse all files";
+  const sidebarToggleLabel = sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar";
   return (
     <TooltipProvider>
       <header className="review-toolbar">
@@ -121,9 +128,16 @@ export function ReviewToolbar({
           Finish Review
         </Button>
         <div className="review-toolbar-row2">
-          <Button variant="secondary" disabled={busy} onClick={onQueue}>
-            Queue ({queueCount})
-          </Button>
+          <IconButton
+            label={sidebarToggleLabel}
+            tooltip={sidebarToggleLabel}
+            aria-pressed={sidebarCollapsed}
+            disabled={busy}
+            onClick={onToggleSidebar}
+            className="review-toolbar-sidebar-toggle"
+          >
+            <SidebarToggleIcon />
+          </IconButton>
           <div className="flex items-center gap-1">
             <IconButton
               label="Split view"

@@ -1,8 +1,21 @@
 import { Effect } from "effect";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { InboxLoadSnapshot } from "../inbox/load-inbox";
 import type { CodeReviewProvider, PullRequestSummary } from "../providers/contracts";
 import { ReviewScreen } from "./ReviewScreen";
+
+function buildInbox(pullRequests: ReadonlyArray<PullRequestSummary>): InboxLoadSnapshot {
+  return {
+    pullRequests,
+    validCheckpointKeys: [],
+    resolvedRepositoryKeys: [],
+    failures: [],
+    totalRepositories: pullRequests.length,
+    completedRepositories: pullRequests.length,
+    isComplete: true,
+  };
+}
 
 vi.mock("./DiffReview", () => ({
   DiffReview: ({
@@ -105,7 +118,7 @@ function clickFinish(): void {
 describe("ReviewScreen", () => {
   afterEach(() => cleanup());
 
-  it("advances from a middle queue item to the following item", async () => {
+  it("advances from a middle review-list item to the following item", async () => {
     const first = { ...pullRequest, ref: { ...pullRequest.ref, id: 6 }, title: "First" };
     const last = { ...pullRequest, ref: { ...pullRequest.ref, id: 8 }, title: "Last" };
     const onSelectPullRequest = vi.fn();
@@ -119,7 +132,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[first, pullRequest, last]}
+        inbox={buildInbox([first, pullRequest, last])}
         onBack={vi.fn()}
         onSelectPullRequest={onSelectPullRequest}
         saveCheckpoint={() => Promise.resolve()}
@@ -148,7 +161,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -167,7 +180,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -195,7 +208,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -232,7 +245,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -283,7 +296,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -331,7 +344,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -356,7 +369,7 @@ describe("ReviewScreen", () => {
     expect(approvePullRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("persists a reviewed checkpoint before advancing to the next captured queue item", async () => {
+  it("persists a reviewed checkpoint before advancing to the next review-list item", async () => {
     const saveCheckpoint = vi.fn(() => Promise.resolve());
     const onSelectPullRequest = vi.fn();
     const nextPullRequest = {
@@ -374,7 +387,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={onSelectPullRequest}
         saveCheckpoint={saveCheckpoint}
@@ -386,6 +399,139 @@ describe("ReviewScreen", () => {
 
     await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
     expect(onSelectPullRequest).toHaveBeenCalledWith(nextPullRequest);
+  });
+
+  it("returns to the inbox after Finish Review when no actionable pull request remains", async () => {
+    const saveCheckpoint = vi.fn(() => Promise.resolve());
+    const onBack = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        inbox={buildInbox([pullRequest])}
+        onBack={onBack}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalledOnce());
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
+  });
+
+  it("returns to the inbox on Escape when nothing else is handling it", () => {
+    const onBack = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        inbox={buildInbox([pullRequest])}
+        onBack={onBack}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("does not return to the inbox on Escape while Finish Review is open", () => {
+    const onBack = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        inbox={buildInbox([pullRequest])}
+        onBack={onBack}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("does not return to the inbox on Escape while a toolbar menu is open", async () => {
+    const onBack = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined))}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        inbox={buildInbox([pullRequest])}
+        onBack={onBack}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={() => Promise.resolve()}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Display options" }), { button: 0 });
+    await screen.findByRole("menu");
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it("does not return to the inbox on Escape while a finishing checkpoint is in flight", async () => {
+    let completeCheckpoint = (): void => undefined;
+    const saveCheckpoint = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          completeCheckpoint = resolve;
+        }),
+    );
+    const onBack = vi.fn();
+    render(
+      <ReviewScreen
+        provider={provider(() => Effect.succeed(undefined), {
+          listOpenPullRequests: () => Effect.succeed([pullRequest]),
+        })}
+        pullRequest={pullRequest}
+        themeType="light"
+        theme="system"
+        onThemeChange={vi.fn()}
+        currentUserId="reviewer"
+        inbox={buildInbox([pullRequest])}
+        onBack={onBack}
+        onSelectPullRequest={vi.fn()}
+        saveCheckpoint={saveCheckpoint}
+      />,
+    );
+
+    clickFinish();
+    fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
+    await waitFor(() => expect(saveCheckpoint).toHaveBeenCalled());
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onBack).not.toHaveBeenCalled();
+
+    completeCheckpoint();
+    await waitFor(() => expect(onBack).toHaveBeenCalledOnce());
   });
 
   it("locks review navigation until a finishing checkpoint is durable", async () => {
@@ -413,16 +559,12 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={onBack}
         onSelectPullRequest={onSelectPullRequest}
         saveCheckpoint={saveCheckpoint}
       />,
     );
-
-    fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
-    expect(screen.getByRole("dialog", { name: "Review queue" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close review queue" }));
 
     clickFinish();
     fireEvent.click(screen.getByRole("button", { name: "Reviewed" }));
@@ -432,11 +574,8 @@ describe("ReviewScreen", () => {
     // pending, so the toolbar behind it is aria-hidden — query with `hidden: true`
     // to inspect its disabled state, which is inert either way (aria-hidden AND disabled).
     expect(screen.getByRole("button", { name: "Back to inbox", hidden: true })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Queue (2)", hidden: true })).toBeDisabled();
-    expect(screen.queryByRole("dialog", { name: "Review queue" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to inbox", hidden: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Queue (2)", hidden: true }));
     expect(onBack).not.toHaveBeenCalled();
     expect(onSelectPullRequest).not.toHaveBeenCalled();
 
@@ -478,7 +617,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={onSelectPullRequest}
         saveCheckpoint={saveCheckpoint}
@@ -514,7 +653,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -540,7 +679,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -569,7 +708,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -602,7 +741,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -633,7 +772,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -666,7 +805,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -688,7 +827,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest, nextPullRequest]}
+        inbox={buildInbox([pullRequest, nextPullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -709,7 +848,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -739,7 +878,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -768,7 +907,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -795,7 +934,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -821,7 +960,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -853,7 +992,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={saveCheckpoint}
@@ -880,7 +1019,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -925,7 +1064,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}
@@ -952,7 +1091,7 @@ describe("ReviewScreen", () => {
         theme="system"
         onThemeChange={vi.fn()}
         currentUserId="reviewer"
-        queue={[pullRequest]}
+        inbox={buildInbox([pullRequest])}
         onBack={vi.fn()}
         onSelectPullRequest={vi.fn()}
         saveCheckpoint={() => Promise.resolve()}

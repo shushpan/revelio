@@ -6,7 +6,7 @@
   "values": [
     {
       "id": 7,
-      "title": "Improve review queue",
+      "title": "Improve review flow",
       "description": "Synthetic pull request for contract tests.",
       "state": "OPEN",
       "updated_on": "2026-08-28T09:30:00+00:00",
@@ -16,7 +16,7 @@
         "nickname": "author"
       },
       "source": {
-        "branch": { "name": "feature/review-queue" },
+        "branch": { "name": "feature/review-flow" },
         "commit": { "hash": "abcdef1234567890" }
       },
       "destination": {

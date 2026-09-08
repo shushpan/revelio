@@ -25,10 +25,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={2}
+        sidebarCollapsed={false}
         busy={false}
         onBack={onBack}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -38,7 +38,7 @@ describe("ReviewToolbar", () => {
 
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeEnabled();
     expect(screen.getByText("acme/review #7")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Queue (2)" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeVisible();
     const finishButtons = screen.getAllByRole("button", { name: "Finish Review" });
     expect(finishButtons).toHaveLength(2);
     for (const finishButton of finishButtons) {
@@ -48,7 +48,7 @@ describe("ReviewToolbar", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to inbox" }));
     expect(onBack).toHaveBeenCalledOnce();
 
-    fireEvent.click(screen.getByRole("button", { name: "Queue (2)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     fireEvent.click(finishButtons[0]);
   });
 
@@ -56,10 +56,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -73,14 +73,14 @@ describe("ReviewToolbar", () => {
     expect(screen.getByRole("button", { name: "Display options" })).toBeDisabled();
   });
 
-  it("disables Back, Queue, and Finish while busy", () => {
+  it("disables Back, the sidebar toggle, and Finish while busy", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={1}
+        sidebarCollapsed={false}
         busy
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -89,7 +89,7 @@ describe("ReviewToolbar", () => {
     );
 
     expect(screen.getByRole("button", { name: "Back to inbox" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Queue (1)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toBeDisabled();
     for (const finishButton of screen.getAllByRole("button", { name: "Finish Review" })) {
       expect(finishButton).toBeDisabled();
     }
@@ -99,10 +99,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -119,10 +119,10 @@ describe("ReviewToolbar", () => {
     const { container } = render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={2}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -139,7 +139,7 @@ describe("ReviewToolbar", () => {
     expect(order).toEqual([
       "Back to inbox",
       "Finish Review",
-      "Queue (2)",
+      "Collapse sidebar",
       "Split view",
       "Unified view",
       "Collapse all files",
@@ -160,10 +160,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -195,10 +195,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -215,10 +215,10 @@ describe("ReviewToolbar", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy={false}
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"
@@ -232,14 +232,71 @@ describe("ReviewToolbar", () => {
     expect(expandButton).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("exposes sidebar-collapsed state via aria-pressed and an accurate label/tooltip", () => {
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        sidebarCollapsed={false}
+        busy={false}
+        onBack={vi.fn()}
+        onToggleSidebar={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    const collapseButton = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(collapseButton).toHaveAttribute("aria-pressed", "false");
+
+    cleanup();
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        sidebarCollapsed={true}
+        busy={false}
+        onBack={vi.fn()}
+        onToggleSidebar={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    const expandButton = screen.getByRole("button", { name: "Expand sidebar" });
+    expect(expandButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("marks the sidebar toggle desktop-only, since narrow viewports use the sheet's own trigger", () => {
+    render(
+      <ReviewToolbar
+        pullRequest={pullRequest}
+        sidebarCollapsed={false}
+        busy={false}
+        onBack={vi.fn()}
+        onToggleSidebar={vi.fn()}
+        onFinish={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveClass(
+      "review-toolbar-sidebar-toggle",
+    );
+  });
+
   it("keeps split, unified, collapse, and display disabled while busy even when callbacks are supplied", () => {
     render(
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={0}
+        sidebarCollapsed={false}
         busy
         onBack={vi.fn()}
-        onQueue={vi.fn()}
+        onToggleSidebar={vi.fn()}
         onFinish={vi.fn()}
         theme="system"
         resolvedTheme="light"

@@ -184,7 +184,7 @@ const installBitbucketFixtures = async (
       await route.fulfill({
         json: {
           values: [
-            pullRequest("review", 7, "Improve review queue", ["{reviewer-uuid}"]),
+            pullRequest("review", 7, "Improve review flow", ["{reviewer-uuid}"]),
             ...(freshReviewIsAvailable
               ? [pullRequest("review", 9, "Fresh review arrives", ["{reviewer-uuid}"])]
               : []),
@@ -488,7 +488,7 @@ test("keeps toolbar keyboard focus order monotonic with exactly one visible Fini
   }
 });
 
-test("Finish Review persists the review checkpoint before advancing the captured queue", async ({
+test("Finish Review persists the review checkpoint before advancing through the review list", async ({
   page,
 }) => {
   const fixtures = await installBitbucketFixtures(page, { toolsRequestedByCurrentUser: true });
@@ -516,20 +516,16 @@ test("Finish Review persists the review checkpoint before advancing the captured
 
   await expect(page.getByRole("heading", { name: "Tighten build checks" })).toBeVisible();
   expect(fixtures.freshReviewArrivedDuringFinishRefresh()).toBe(true);
-  await expect(page.getByRole("button", { name: "Queue (2)" })).toBeVisible();
-  await page.getByRole("button", { name: "Queue (2)" }).click();
-  const reviewQueue = page.getByRole("dialog", { name: "Review queue" });
-  await expect(reviewQueue).toBeVisible();
-  await expect(reviewQueue.getByRole("button", { name: /Improve review queue/ })).toBeVisible();
-  await expect(
-    reviewQueue.getByRole("button", { name: /Improve review queue/ }),
-  ).not.toHaveAttribute("aria-current", "true");
-  await expect(reviewQueue.getByRole("button", { name: /Tighten build checks/ })).toHaveAttribute(
+  // The sidebar's Inbox tab (replacing the removed Queue drawer) is expanded and
+  // active by default - it is this review's actionable sequence, drawn from the
+  // same inbox snapshot the main inbox screen uses.
+  await expect(page.getByRole("tab", { name: "Inbox" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByRole("button", { name: /Improve review flow/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Tighten build checks/ })).toHaveAttribute(
     "aria-current",
     "true",
   );
-  await expect(reviewQueue.getByRole("button", { name: /Fresh review arrives/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "Close review queue" }).click();
+  await expect(page.getByRole("button", { name: /Fresh review arrives/ })).toHaveCount(0);
   await expect
     .poll(() => readStoredCheckpoints(page))
     .toMatchObject({
@@ -611,6 +607,7 @@ test("selecting a Tree row scrolls the diff, and the Tree survives two Tree ↔ 
   await page.getByLabel("Filter pull requests").fill("");
   await page.getByRole("button", { name: /acme\/review/ }).click();
 
+  await page.getByRole("tab", { name: "Tree" }).click();
   await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
   await expect(page.getByText("src/check.ts", { exact: true })).toBeVisible();
   await page.getByText("src/check.ts", { exact: true }).click();
@@ -642,6 +639,7 @@ test("scrolling the real diff viewport to a later file updates the real tree row
   await page.getByLabel("Filter pull requests").fill("");
   await page.getByRole("button", { name: /acme\/review/ }).click();
 
+  await page.getByRole("tab", { name: "Tree" }).click();
   await expect(page.getByRole("tab", { name: "Tree", selected: true })).toBeVisible();
   await expect(page.locator(".diff-view")).toContainText("export const reviewed = true;");
 
@@ -757,7 +755,7 @@ test("the narrow sidebar sheet is a real dialog: focus enters it, Tab never esca
   const dialog = page.getByRole("dialog", { name: "Review sidebar" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("aria-modal", "true");
-  await expect(page.getByRole("tab", { name: "Tree" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Inbox" })).toBeFocused();
   await expect(page.getByRole("tablist")).toHaveCount(1);
 
   // Real Tab-key traversal (native browser behavior, not a synthetic keydown):
@@ -840,7 +838,7 @@ test("keeps successful rows visible when another selected repository fails", asy
 
   await expect(page.getByText("acme/review")).toBeVisible();
   await expect(
-    page.getByText("Results are incomplete: 1 repositories could not be loaded."),
+    page.getByText("Results are incomplete: 1 repositories could not be loaded (acme/tools)."),
   ).toBeVisible();
   await expect(page.getByText("No pull requests in this view.")).toHaveCount(0);
 });

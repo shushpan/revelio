@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { InboxLoadSnapshot } from "../../inbox/load-inbox";
 import type {
   CodeReviewProvider,
   PullRequestSummary,
@@ -24,6 +25,20 @@ const pullRequest: PullRequestSummary = {
   author: { id: "author", displayName: "Author" },
   reviewerIds: [],
 };
+
+function buildInbox(pullRequests: ReadonlyArray<PullRequestSummary>): InboxLoadSnapshot {
+  return {
+    pullRequests,
+    validCheckpointKeys: [],
+    resolvedRepositoryKeys: [],
+    failures: [],
+    totalRepositories: pullRequests.length,
+    completedRepositories: pullRequests.length,
+    isComplete: true,
+  };
+}
+
+const inbox = buildInbox([pullRequest]);
 
 function makeProvider(
   getReviewSignals: CodeReviewProvider["getReviewSignals"] = () => Effect.succeed([]),
@@ -59,6 +74,8 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -78,6 +95,8 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -103,6 +122,8 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -111,7 +132,7 @@ describe("Sidebar", () => {
     const sheet = screen.getByRole("dialog", { name: "Review sidebar" });
     expect(sheet).toHaveAttribute("aria-modal", "true");
     await waitFor(() => expect(sheet.contains(document.activeElement)).toBe(true));
-    expect(screen.getByRole("tab", { name: "Tree" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Inbox" })).toHaveFocus();
   });
 
   it("returns focus to the Open sidebar trigger when the sheet closes via Escape", async () => {
@@ -123,11 +144,13 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
-    await waitFor(() => expect(screen.getByRole("tab", { name: "Tree" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("tab", { name: "Inbox" })).toHaveFocus());
 
     fireEvent.keyDown(document, { key: "Escape" });
 
@@ -147,17 +170,19 @@ describe("Sidebar", () => {
           pullRequest={pullRequest}
           currentUserId="reviewer"
           provider={provider}
+          inbox={inbox}
+          onSelectPullRequest={vi.fn()}
         />
       </div>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
-    const treeTab = screen.getByRole("tab", { name: "Tree" });
-    await waitFor(() => expect(treeTab).toHaveFocus());
+    const inboxTab = screen.getByRole("tab", { name: "Inbox" });
+    await waitFor(() => expect(inboxTab).toHaveFocus());
 
     screen.getByTestId("outside-button").focus();
 
-    await waitFor(() => expect(treeTab).toHaveFocus());
+    await waitFor(() => expect(inboxTab).toHaveFocus());
   });
 
   it("suppresses background interaction while the sheet is open and releases it on close", () => {
@@ -173,6 +198,8 @@ describe("Sidebar", () => {
           pullRequest={pullRequest}
           currentUserId="reviewer"
           provider={provider}
+          inbox={inbox}
+          onSelectPullRequest={vi.fn()}
         />
       </div>,
     );
@@ -196,6 +223,8 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -217,10 +246,13 @@ describe("Sidebar", () => {
         pullRequest={pullRequest}
         currentUserId="reviewer"
         provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
     const cases: ReadonlyArray<readonly [string, string]> = [
+      ["Inbox", "This review's pull requests"],
       ["Tree", "Browse changed files"],
       ["Description", "Pull request description and reviewers"],
       ["Activity", "Review activity timeline"],
@@ -255,7 +287,8 @@ describe("Sidebar", () => {
     // The tooltip wiring must not steal Radix's own active/inactive
     // data-state — the exact collision the previous `title`-based
     // workaround was introduced to avoid.
-    expect(screen.getByRole("tab", { name: "Tree" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Inbox" })).toHaveAttribute("data-state", "active");
+    expect(screen.getByRole("tab", { name: "Tree" })).toHaveAttribute("data-state", "inactive");
     expect(screen.getByRole("tab", { name: "Description" })).toHaveAttribute(
       "data-state",
       "inactive",
@@ -266,10 +299,29 @@ describe("Sidebar", () => {
       "data-state",
       "active",
     );
-    expect(screen.getByRole("tab", { name: "Tree" })).toHaveAttribute("data-state", "inactive");
+    expect(screen.getByRole("tab", { name: "Inbox" })).toHaveAttribute("data-state", "inactive");
     expect(
       screen.getByRole("tab", { name: "Description" }).getAttribute("aria-describedby"),
     ).not.toBeNull();
+  });
+
+  it("shows Inbox as the sidebar's first, initially active tab", () => {
+    render(
+      <Sidebar
+        files={[]}
+        selectedPath={null}
+        onSelectPath={vi.fn()}
+        pullRequest={pullRequest}
+        currentUserId="reviewer"
+        provider={provider}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
+      />,
+    );
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[0]).toBe(screen.getByRole("tab", { name: "Inbox" }));
+    expect(screen.getByRole("tab", { name: "Inbox" })).toHaveAttribute("data-state", "active");
   });
 
   it("loads review signals once when Description opens first, and Activity reuses the result", async () => {
@@ -285,6 +337,8 @@ describe("Sidebar", () => {
         pullRequest={{ ...pullRequest, reviewerIds: ["reviewer"] }}
         currentUserId="reviewer"
         provider={makeProvider(getReviewSignals)}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 
@@ -317,6 +371,8 @@ describe("Sidebar", () => {
         pullRequest={{ ...pullRequest, reviewerIds: ["reviewer"] }}
         currentUserId="reviewer"
         provider={makeProvider(getReviewSignals)}
+        inbox={inbox}
+        onSelectPullRequest={vi.fn()}
       />,
     );
 

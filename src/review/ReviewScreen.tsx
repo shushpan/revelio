@@ -1,8 +1,10 @@
 import { Effect } from "effect";
 import type { JSX } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { pullRequestKey } from "../inbox/InboxScreen";
+import { reviewList } from "../inbox/review-list";
 import type { Checkpoint } from "../inbox/checkpoint";
+import type { InboxLoadSnapshot } from "../inbox/load-inbox";
 import type {
   CodeReviewProvider,
   InlineCommentAnchor,
@@ -14,7 +16,6 @@ import { shouldUseDiffsWorkerPool } from "../workers/diffs-worker-gate";
 import { type DiffIndicatorsOption, type DiffLayout, DiffReview } from "./DiffReview";
 import { FinishReviewDialog } from "./FinishReviewDialog";
 import type { PreparedPatchFile } from "./patch";
-import { QueueDrawer } from "./QueueDrawer";
 import { ReviewToolbar } from "./ReviewToolbar";
 import { Sidebar } from "./sidebar/Sidebar";
 import {
@@ -59,7 +60,7 @@ export interface ReviewScreenProps {
   readonly theme: ThemeChoice;
   readonly onThemeChange: (theme: ThemeChoice) => void;
   readonly currentUserId: string;
-  readonly queue: ReadonlyArray<PullRequestSummary>;
+  readonly inbox: InboxLoadSnapshot;
   readonly onBack: () => void;
   readonly onSelectPullRequest: (pullRequest: PullRequestSummary) => void;
   /** Resolves only after the generated checkpoint is durable. */
@@ -79,7 +80,7 @@ export function ReviewScreen({
   theme,
   onThemeChange,
   currentUserId,
-  queue,
+  inbox,
   onBack,
   onSelectPullRequest,
   saveCheckpoint,
@@ -92,7 +93,7 @@ export function ReviewScreen({
   const [notice, setNotice] = useState<string | null>(null);
   const [files, setFiles] = useState<ReadonlyArray<PreparedPatchFile>>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
-  const [queueOpen, setQueueOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [workerPoolEnabled, setWorkerPoolEnabled] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [finishAttempt, setFinishAttempt] = useState<FinishAttempt | undefined>();
@@ -113,7 +114,6 @@ export function ReviewScreen({
     setLoadingError(null);
     setFiles([]);
     setSelectedPath(null);
-    setQueueOpen(false);
     setComment("");
     setInlineIntent(null);
     setDrafts([]);
@@ -134,11 +134,33 @@ export function ReviewScreen({
     void shouldUseDiffsWorkerPool().then((enabled) => setWorkerPoolEnabled(enabled));
   }, []);
 
+  // Escape returns to the inbox, but only when nothing else already owns it:
+  // the Finish Review dialog and the mobile sidebar sheet both render with
+  // `aria-modal="true"` while open, and Radix's dropdown menu content only
+  // exists in the DOM (`role="menu"`) while open - checking the real DOM
+  // beats threading each descendant's open state up through props.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      if (finishOpen || isActionInFlight) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (document.querySelector('[role="menu"]')) return;
+      onBack();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [finishOpen, isActionInFlight, onBack]);
+
+  const upcomingReviews = useMemo(
+    () => reviewList(inbox, currentUserId, pullRequest),
+    [inbox, currentUserId, pullRequest],
+  );
+
   const advanceAfterCheckpoint = (): void => {
-    const currentIndex = queue.findIndex(
+    const currentIndex = upcomingReviews.findIndex(
       (candidate) => pullRequestKey(candidate) === currentPullRequestKey,
     );
-    const next = currentIndex < 0 ? undefined : queue.slice(currentIndex + 1)[0];
+    const next = currentIndex < 0 ? undefined : upcomingReviews.slice(currentIndex + 1)[0];
     if (next) onSelectPullRequest(next);
     else onBack();
   };
@@ -160,7 +182,6 @@ export function ReviewScreen({
 
   const finish = (outcome: FinishReviewOutcome): void => {
     if (outcome !== "reviewed" && !provider.capabilities.canWriteReviews) return;
-    setQueueOpen(false);
     setAction("Finish Review");
     setNotice(null);
     const previousReceipt: FinishReviewReceipt | undefined =
@@ -265,10 +286,6 @@ export function ReviewScreen({
       });
   };
 
-  const queueIndex = queue.findIndex(
-    (candidate) => pullRequestKey(candidate) === pullRequestKey(pullRequest),
-  );
-
   const displayOptions = (
     <>
       <DropdownMenuItem
@@ -302,14 +319,11 @@ export function ReviewScreen({
     <main className="review-page">
       <ReviewToolbar
         pullRequest={pullRequest}
-        queueCount={queue.length}
+        sidebarCollapsed={sidebarCollapsed}
         busy={isActionInFlight}
         onBack={onBack}
-        onQueue={() => setQueueOpen(true)}
-        onFinish={() => {
-          setQueueOpen(false);
-          setFinishOpen(true);
-        }}
+        onToggleSidebar={() => setSidebarCollapsed((value) => !value)}
+        onFinish={() => setFinishOpen(true)}
         theme={theme}
         resolvedTheme={themeType}
         onThemeChange={onThemeChange}
@@ -327,7 +341,7 @@ export function ReviewScreen({
       />
       <div className="review-body">
         {patch !== null ? (
-          <div className="review-main">
+          <div className="review-main" data-sidebar-collapsed={sidebarCollapsed}>
             <Sidebar
               files={files}
               selectedPath={selectedPath}
@@ -336,6 +350,9 @@ export function ReviewScreen({
               currentUserId={currentUserId}
               provider={provider}
               themeType={themeType}
+              inbox={inbox}
+              onSelectPullRequest={onSelectPullRequest}
+              busy={isActionInFlight}
             />
             <DiffReview
               patch={patch}
@@ -378,18 +395,6 @@ export function ReviewScreen({
         onSendDraftNow={sendDraftNow}
         onFinish={finish}
         notice={notice}
-      />
-      <QueueDrawer
-        queue={queue}
-        currentIndex={queueIndex}
-        isOpen={queueOpen}
-        busy={isActionInFlight}
-        onSelect={(next) => {
-          if (isActionInFlight) return;
-          setQueueOpen(false);
-          onSelectPullRequest(next);
-        }}
-        onClose={() => setQueueOpen(false)}
       />
     </main>
   );

@@ -78,8 +78,46 @@ describe("InboxScreen", () => {
 
     expect(screen.queryByText("No pull requests in this view.")).not.toBeInTheDocument();
     expect(
-      screen.getByText("Results are incomplete: 1 repositories could not be loaded."),
+      screen.getByText("Results are incomplete: 1 repositories could not be loaded (acme/bad)."),
     ).toBeInTheDocument();
+  });
+
+  it("names every failed repository, not just a count", () => {
+    renderInbox({
+      totalRepositories: 3,
+      completedRepositories: 3,
+      isComplete: true,
+      failures: [
+        { repository: { workspace: "acme", slug: "bad" }, errorTag: "Forbidden" },
+        { repository: { workspace: "acme", slug: "worse" }, errorTag: "ServerError" },
+      ],
+    });
+
+    expect(
+      screen.getByText(
+        "Results are incomplete: 2 repositories could not be loaded (acme/bad, acme/worse).",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a fixed number of row skeletons while loading, without hiding rows already loaded", () => {
+    const loaded = pullRequestFor("repo-a", "2026-08-29T10:00:00Z");
+    renderInbox({
+      pullRequests: [loaded],
+      totalRepositories: 3,
+      completedRepositories: 1,
+      isComplete: false,
+    });
+
+    expect(screen.getByText("PR for repo-a")).toBeInTheDocument();
+    const list = document.querySelector(".inbox-list");
+    expect(list?.querySelectorAll(".inbox-row-skeleton")).toHaveLength(3);
+  });
+
+  it("renders no skeletons once loading is complete", () => {
+    renderInbox({ totalRepositories: 1, completedRepositories: 1, isComplete: true });
+
+    expect(document.querySelectorAll(".inbox-row-skeleton")).toHaveLength(0);
   });
 
   it("shows empty copy only once every selected repository succeeded with zero pull requests", () => {
@@ -396,7 +434,10 @@ describe("InboxScreen", () => {
   });
 
   it("shows dense row metadata: repository, author, pull request state, and reviewer status", () => {
-    const pullRequest = pullRequestFor("repo-a", "2026-08-29T10:00:00Z");
+    const pullRequest = {
+      ...pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+      reviewerIds: ["REVIEWER"],
+    };
     renderInbox({
       pullRequests: [pullRequest],
       totalRepositories: 1,
@@ -405,8 +446,127 @@ describe("InboxScreen", () => {
 
     const row = screen.getByRole("button", { name: /PR for repo-a/ });
     expect(row).toHaveTextContent("acme/repo-a");
+    expect(row).toHaveTextContent("#1");
     expect(row).toHaveTextContent("Author");
     expect(row).toHaveTextContent("OPEN");
     expect(row).toHaveTextContent("Needs my review");
+  });
+
+  it("shows Authored by me instead of a review request when the current user wrote the pull request", () => {
+    const authored = {
+      ...pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+      author: { id: "reviewer", displayName: "Reviewer" },
+      reviewerIds: [],
+    };
+    renderInbox({ pullRequests: [authored], totalRepositories: 1, completedRepositories: 1 });
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+
+    const row = screen.getByRole("button", { name: /PR for repo-a/ });
+    expect(row).toHaveTextContent("Authored by me");
+    expect(row).not.toHaveTextContent("Needs my review");
+  });
+
+  it("shows no attention chip for a pull request that neither requests nor was authored by the current user", () => {
+    const other = {
+      ...pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+      author: { id: "someone-else", displayName: "Someone Else" },
+      reviewerIds: [],
+    };
+    renderInbox({ pullRequests: [other], totalRepositories: 1, completedRepositories: 1 });
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+
+    const row = screen.getByRole("button", { name: /PR for repo-a/ });
+    expect(row).not.toHaveTextContent("Needs my review");
+    expect(row).not.toHaveTextContent("Authored by me");
+  });
+
+  it("shows a short relative age instead of an absolute date, keeping the exact date available", () => {
+    const recent = pullRequestFor("repo-a", new Date(Date.now() - 5 * 60_000).toISOString());
+    renderInbox({ pullRequests: [recent], totalRepositories: 1, completedRepositories: 1 });
+
+    const row = screen.getByRole("button", { name: /PR for repo-a/ });
+    expect(row).toHaveTextContent("5m ago");
+    const time = row.querySelector("time");
+    expect(time).toHaveAttribute("title");
+  });
+
+  it("orders actionable requested/unreviewed work oldest first, ahead of reviewed rows", () => {
+    const olderActionable = pullRequestFor("older", "2026-08-01T10:00:00Z");
+    const newerActionable = pullRequestFor("newer", "2026-08-20T10:00:00Z");
+    const reviewedRow = pullRequestFor("reviewed", "2026-08-30T10:00:00Z");
+    render(
+      <InboxScreen
+        user={user}
+        inbox={snapshot({
+          pullRequests: [newerActionable, reviewedRow, olderActionable],
+          totalRepositories: 3,
+          completedRepositories: 3,
+        })}
+        reviewed={{ "acme/reviewed#1": "abc123" }}
+        onSelect={vi.fn()}
+        onRefresh={vi.fn()}
+        onManageRepositories={vi.fn()}
+        onLock={vi.fn()}
+        theme="system"
+        resolvedTheme="light"
+        onThemeChange={vi.fn()}
+      />,
+    );
+    // Clear the default "is:unreviewed" query so the already-reviewed row
+    // stays visible too - ordering, not filtering, is what this test covers.
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "" } });
+
+    const rows = screen.getAllByRole("button", { name: /PR for/ });
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent("PR for older");
+    expect(rows[1]).toHaveTextContent("PR for newer");
+    expect(rows[2]).toHaveTextContent("PR for reviewed");
+  });
+
+  it("focuses the query field when / is pressed outside an editable control", () => {
+    renderInbox({
+      pullRequests: [pullRequestFor("repo-a", "2026-08-29T10:00:00Z")],
+      totalRepositories: 1,
+      completedRepositories: 1,
+    });
+
+    fireEvent.keyDown(document.body, { key: "/" });
+
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+  });
+
+  it("does not steal / from an editable control the user is already typing in", () => {
+    renderInbox({
+      pullRequests: [pullRequestFor("repo-a", "2026-08-29T10:00:00Z")],
+      totalRepositories: 1,
+      completedRepositories: 1,
+    });
+    const search = screen.getByRole("searchbox");
+    search.focus();
+
+    fireEvent.keyDown(search, { key: "/" });
+
+    expect(search).toHaveFocus();
+  });
+
+  it("moves focus through visible inbox rows with ArrowDown and ArrowUp", () => {
+    renderInbox({
+      pullRequests: [
+        pullRequestFor("repo-a", "2026-08-29T10:00:00Z"),
+        pullRequestFor("repo-b", "2026-08-28T10:00:00Z"),
+      ],
+      totalRepositories: 2,
+      completedRepositories: 2,
+    });
+    const rows = screen.getAllByRole("button", { name: /PR for/ });
+
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(rows[0]).toHaveFocus();
+
+    fireEvent.keyDown(document.body, { key: "ArrowDown" });
+    expect(rows[1]).toHaveFocus();
+
+    fireEvent.keyDown(document.body, { key: "ArrowUp" });
+    expect(rows[0]).toHaveFocus();
   });
 });

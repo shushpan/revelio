@@ -79,12 +79,24 @@ type AppState =
       readonly scope: RepositoryScope;
       readonly pullRequest: PullRequestSummary;
       readonly inbox: InboxLoadSnapshot;
-      readonly queue: ReadonlyArray<PullRequestSummary>;
     } & Session);
 
 const reviewedStorageKey = "revelio.reviewed";
 const lockoutStorageKey = "revelio.locked";
 const lockFailureMessage = "The local vault could not be locked. Try Lock again.";
+/** Independent of the vault's 7-day trusted-browser resume window (`TRUSTED_BROWSER_TTL_MS`):
+ * that window controls whether reopening the app still needs a passphrase/passkey, while this
+ * timer locks an already-unlocked session after inactivity, regardless of how much of the 7
+ * days remains. */
+const INACTIVITY_LOCK_MS = 15 * 60 * 1000;
+const AUTHENTICATED_SCREENS = new Set<AppState["screen"]>([
+  "setup-vault",
+  "select-sources",
+  "inbox",
+  "review",
+]);
+const isAuthenticatedScreen = (screen: AppState["screen"]): boolean =>
+  AUTHENTICATED_SCREENS.has(screen);
 const emptyScope: RepositoryScope = { selectedWorkspaces: [], selectedRepositories: [] };
 const emptyDiscovery: DiscoveryProgress = {
   completed: 0,
@@ -173,22 +185,6 @@ const reviewedFromSnapshot = (snapshot: InboxLoadSnapshot): Record<string, strin
       .filter((pullRequest) => valid.has(pullRequestKey(pullRequest)))
       .map((pullRequest) => [pullRequestKey(pullRequest), pullRequest.sourceCommit]),
   );
-};
-
-const actionableQueue = (
-  snapshot: InboxLoadSnapshot,
-  user: ProviderUser,
-  selected: PullRequestSummary,
-): ReadonlyArray<PullRequestSummary> => {
-  const valid = new Set(snapshot.validCheckpointKeys ?? []);
-  const actionable = snapshot.pullRequests.filter(
-    (pullRequest) =>
-      !valid.has(pullRequestKey(pullRequest)) &&
-      pullRequest.reviewerIds.some((id) => id.toLowerCase() === user.id.toLowerCase()),
-  );
-  return actionable.some((pullRequest) => pullRequestKey(pullRequest) === pullRequestKey(selected))
-    ? actionable
-    : [selected];
 };
 
 const discoverRepositoriesForWorkspaces = async (
@@ -711,6 +707,57 @@ export function App(): JSX.Element {
       });
   };
 
+  const lockRef = useRef(lock);
+  lockRef.current = lock;
+  const isAuthenticated = isAuthenticatedScreen(appState.screen);
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
+  const lastActivityAtRef = useRef(Date.now());
+  const armInactivityLockRef = useRef<() => void>(() => undefined);
+
+  // Locks an authenticated session after 15 idle minutes, reusing `lock` so
+  // credentials and trusted-browser state clear exactly as explicit Lock
+  // does. Listens for low-frequency activity signals only (no mousemove/
+  // scroll) and keeps a single reschedulable timeout rather than a poll.
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
+    const arm = (): void => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      if (!isAuthenticatedRef.current) return;
+      const remainingMs = INACTIVITY_LOCK_MS - (Date.now() - lastActivityAtRef.current);
+      if (remainingMs <= 0) {
+        lockRef.current();
+        return;
+      }
+      timeoutId = window.setTimeout(() => {
+        if (isAuthenticatedRef.current) lockRef.current();
+      }, remainingMs);
+    };
+    armInactivityLockRef.current = arm;
+    const onActivity = (): void => {
+      lastActivityAtRef.current = Date.now();
+      arm();
+    };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") arm();
+    };
+    document.addEventListener("pointerdown", onActivity);
+    document.addEventListener("keydown", onActivity);
+    document.addEventListener("visibilitychange", onVisibility);
+    arm();
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+      document.removeEventListener("pointerdown", onActivity);
+      document.removeEventListener("keydown", onActivity);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) lastActivityAtRef.current = Date.now();
+    armInactivityLockRef.current();
+  }, [isAuthenticated]);
+
   const finishVaultSetup = (kind: "passkey" | "passphrase" | "session", passphrase = ""): void => {
     if (appState.screen !== "setup-vault") return;
     const current = appState;
@@ -876,7 +923,6 @@ export function App(): JSX.Element {
               screen: "review",
               pullRequest,
               inbox: appState.inbox,
-              queue: actionableQueue(appState.inbox, appState.user, pullRequest),
             })
           }
           onRefresh={refresh}
@@ -903,7 +949,7 @@ export function App(): JSX.Element {
             theme={selectedTheme}
             onThemeChange={setTheme}
             currentUserId={appState.user.id}
-            queue={appState.queue}
+            inbox={appState.inbox}
             onBack={() =>
               setAppState((current) =>
                 current.screen === "review" ? { ...current, screen: "inbox" } : current,

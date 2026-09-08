@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import type { InboxLoadSnapshot } from "../../inbox/load-inbox";
 import type { CodeReviewProvider, PullRequestSummary } from "../../providers/contracts";
 import { IconButton } from "../../ui/IconButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/Tabs";
@@ -16,6 +17,7 @@ import { TooltipProvider } from "../../ui/Tooltip";
 import type { PreparedPatchFile } from "../patch";
 import { type ActivityState, ActivityTab } from "./ActivityTab";
 import { DescriptionTab } from "./DescriptionTab";
+import { InboxTab } from "./InboxTab";
 
 // @pierre/trees is large; keep it out of the main ReviewScreen chunk (§19).
 const TreeTab = lazy(() => import("./TreeTab").then((module) => ({ default: module.TreeTab })));
@@ -55,6 +57,12 @@ function TabGlyph({ children }: { readonly children: ReactNode }): JSX.Element {
   );
 }
 
+const InboxGlyph = (): JSX.Element => (
+  <TabGlyph>
+    <path d="M2 8h3l1.5 2.5h3L11 8h3" />
+    <rect x="2" y="4" width="12" height="8" rx="1" />
+  </TabGlyph>
+);
 const TreeGlyph = (): JSX.Element => (
   <TabGlyph>
     <rect x="2" y="2" width="5" height="5" rx="1" />
@@ -152,9 +160,14 @@ export interface SidebarProps {
   readonly provider: CodeReviewProvider;
   /** Matches `DiffReview`'s `themeType`; defaults to light for callers that don't theme. */
   readonly themeType?: "light" | "dark";
+  /** The review's actionable list, drawn from the same inbox snapshot as
+   * the main inbox screen (§ Inbox tab: replaces the removed Queue drawer). */
+  readonly inbox: InboxLoadSnapshot;
+  readonly onSelectPullRequest: (pullRequest: PullRequestSummary) => void;
+  readonly busy?: boolean;
 }
 
-type SidebarTab = "tree" | "description" | "activity";
+type SidebarTab = "inbox" | "tree" | "description" | "activity";
 
 export function Sidebar({
   files,
@@ -164,8 +177,11 @@ export function Sidebar({
   currentUserId,
   provider,
   themeType,
+  inbox,
+  onSelectPullRequest,
+  busy = false,
 }: SidebarProps): JSX.Element {
-  const [tab, setTab] = useState<SidebarTab>("tree");
+  const [tab, setTab] = useState<SidebarTab>("inbox");
   // Shared per-PR lazy load (fix round item 3): Description and Activity both
   // read this one state; whichever tab is activated first starts the one
   // request `getReviewSignals` makes for the lifetime of this open review
@@ -292,6 +308,15 @@ export function Sidebar({
         >
           <TabsList aria-label="Sidebar sections">
             <TabsTrigger
+              value="inbox"
+              className="sidebar-tab-trigger"
+              aria-describedby="sidebar-tab-tooltip-inbox"
+            >
+              <InboxGlyph />
+              <span>Inbox</span>
+              <TabTooltip id="sidebar-tab-tooltip-inbox">This review's pull requests</TabTooltip>
+            </TabsTrigger>
+            <TabsTrigger
               value="tree"
               className="sidebar-tab-trigger"
               aria-describedby="sidebar-tab-tooltip-tree"
@@ -321,6 +346,15 @@ export function Sidebar({
               <TabTooltip id="sidebar-tab-tooltip-activity">Review activity timeline</TabTooltip>
             </TabsTrigger>
           </TabsList>
+          <TabsContent value="inbox" forceMount className="sidebar-tab-panel">
+            <InboxTab
+              inbox={inbox}
+              currentUserId={currentUserId}
+              currentPullRequest={pullRequest}
+              onSelectPullRequest={onSelectPullRequest}
+              busy={busy}
+            />
+          </TabsContent>
           <TabsContent value="tree" forceMount className="sidebar-tab-panel">
             <Suspense fallback={<TreeTabSkeleton />}>
               <TreeTab

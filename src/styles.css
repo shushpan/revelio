@@ -228,6 +228,11 @@ h2 {
 .inbox-row:hover {
   border-color: var(--accent);
 }
+.inbox-row-skeleton {
+  height: 2.75rem;
+  border-radius: 0.4rem;
+  background: var(--bg-muted);
+}
 .inbox-row-main,
 .inbox-row-meta {
   display: grid;
@@ -351,6 +356,18 @@ h2 {
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+/* Below 768px the sidebar is a bottom sheet with its own "Open sidebar"
+   trigger (`.sidebar-trigger`, always visible there); the collapse/expand
+   toggle only affects the persistent desktop column and has no narrow
+   equivalent, so hide it rather than leave a dead control. */
+.review-toolbar-sidebar-toggle {
+  display: none;
+}
+@media (min-width: 768px) {
+  .review-toolbar-sidebar-toggle {
+    display: inline-flex;
+  }
+}
 .review-toolbar-finish {
   grid-area: finish;
 }
@@ -465,41 +482,25 @@ h2 {
   flex-wrap: wrap;
 }
 
-.queue-drawer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(0, 0, 0, 0.4);
-}
-.queue-drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 51;
+.sidebar-inbox {
   display: grid;
-  width: min(22rem, 90vw);
-  gap: 0.6rem;
-  padding: 1rem;
-  overflow-y: auto;
+  gap: 0.5rem;
   align-content: start;
-  border-left: 1px solid var(--border);
-  background: var(--bg);
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.2);
 }
-.queue-drawer-title {
+.sidebar-inbox-status,
+.sidebar-inbox-warning {
   margin: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
 }
-.queue-drawer-list {
+.sidebar-inbox-list {
   display: grid;
   gap: 0.5rem;
   padding: 0;
   margin: 0;
   list-style: none;
 }
-.queue-drawer-row {
+.sidebar-inbox-row {
   display: grid;
   gap: 0.2rem;
   width: 100%;
@@ -511,11 +512,11 @@ h2 {
   border: 1px solid var(--border);
   border-radius: 0.5rem;
 }
-.queue-drawer-row[aria-current="true"] {
+.sidebar-inbox-row[aria-current="true"] {
   border-color: var(--accent);
 }
-.queue-drawer-repository,
-.queue-drawer-author {
+.sidebar-inbox-repository,
+.sidebar-inbox-author {
   font-size: var(--text-xs);
   color: var(--fg-muted);
 }
@@ -555,6 +556,15 @@ h2 {
      receive click events). */
   .sidebar {
     height: 100%;
+  }
+  /* Toolbar's "Collapse sidebar" control (replaces the removed Queue drawer
+     trigger): the diff canvas reclaims the full width, desktop only - the
+     narrow bottom sheet has its own independent open/close state. */
+  .review-main[data-sidebar-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .review-main[data-sidebar-collapsed="true"] .sidebar {
+    display: none;
   }
 }
 .sidebar {
