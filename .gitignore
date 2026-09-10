@@ -7,4 +7,7 @@ test-results/
 .env.*
 !.env.example
 .Codex/
+.claude/
+.tldr/
+.tldrignore
 .DS_Store
