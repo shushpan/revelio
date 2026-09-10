@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/revelio-logo.png" alt="Revelio logo" width="360">
+</p>
+
 # Revelio
 
 Revelio is a backend-free, personal Bitbucket Cloud review workspace. Its browser
