@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/revelio-logo.svg" alt="Revelio logo" width="360">
+  <img src="docs/assets/revelio-logo.png" alt="Revelio logo" width="280">
 </p>
 
 # Revelio
