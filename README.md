@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/revelio-logo.png" alt="Revelio logo" width="280">
+  <img src="product/assets/revelio-logo.png" alt="Revelio logo" width="280">
 </p>
 
 # Revelio
@@ -76,6 +76,9 @@ git diff --check
 `pnpm verify` formats/lints, type-checks, runs unit tests, builds the production
 bundle, and runs Playwright against that bundle. The browser harness rejects
 unexpected outbound origins and uses synthetic Bitbucket fixtures.
+
+Product status, contracts, ADRs, research, and mockups live in
+[`product/`](product/README.md).
 
 The completed local milestone gate passed with 92 formatted files, 93 linted
 files, 32 unit files / 299 tests, a 312,026-byte initial production bundle

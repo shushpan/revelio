@@ -119,7 +119,7 @@ The main code evidence is in
 [`src/app/App.tsx`](../../../src/app/App.tsx),
 [`src/review/ReviewScreen.tsx`](../../../src/review/ReviewScreen.tsx),
 [`src/review/DiffReview.tsx`](../../../src/review/DiffReview.tsx),
-[`src/review/FileTree.tsx`](../../../src/review/FileTree.tsx), and
+[`src/review/sidebar/TreeTab.tsx`](../../../src/review/sidebar/TreeTab.tsx), and
 [`src/styles.css`](../../../src/styles.css).
 
 Two values account for much of the present visual mismatch: Revelio constrains
